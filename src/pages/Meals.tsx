@@ -3,22 +3,32 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { MealCard } from "@/components/meals/MealCard";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ShoppingCart, Calendar, Plus } from "lucide-react";
+import { ShoppingCart, Calendar, Plus, Loader2, Sparkles } from "lucide-react";
+import { useMealPlan } from "@/hooks/useMealPlan";
+import { addDays } from "date-fns";
 
-const mockMeals = {
-  today: [
-    { type: "breakfast" as const, name: "Greek Yogurt Bowl", calories: 350, protein: 25, carbs: 40, fats: 12, time: "8:00 AM" },
-    { type: "lunch" as const, name: "Grilled Chicken Salad", calories: 450, protein: 35, carbs: 25, fats: 18, time: "12:30 PM" },
-    { type: "snack" as const, name: "Protein Smoothie", calories: 200, protein: 20, carbs: 25, fats: 5, time: "3:00 PM" },
-    { type: "dinner" as const, name: "Salmon with Vegetables", calories: 550, protein: 40, carbs: 30, fats: 22, time: "7:00 PM" },
-  ],
-};
+const mealTypeOrder = ["breakfast", "lunch", "snack", "dinner"];
 
 export default function Meals() {
   const [activeTab, setActiveTab] = useState("today");
+  
+  const today = new Date();
+  const tomorrow = addDays(today, 1);
+  
+  const { mealPlan, isLoading, isGenerating, generateMealPlan } = useMealPlan(today);
+  const { 
+    mealPlan: tomorrowPlan, 
+    isGenerating: isGeneratingTomorrow, 
+    generateMealPlan: generateTomorrowPlan 
+  } = useMealPlan(tomorrow);
 
-  const totalCalories = mockMeals.today.reduce((sum, meal) => sum + meal.calories, 0);
-  const totalProtein = mockMeals.today.reduce((sum, meal) => sum + meal.protein, 0);
+  const sortedMeals = mealPlan?.meals.slice().sort(
+    (a, b) => mealTypeOrder.indexOf(a.meal_type) - mealTypeOrder.indexOf(b.meal_type)
+  ) || [];
+
+  const sortedTomorrowMeals = tomorrowPlan?.meals.slice().sort(
+    (a, b) => mealTypeOrder.indexOf(a.meal_type) - mealTypeOrder.indexOf(b.meal_type)
+  ) || [];
 
   return (
     <AppLayout>
@@ -30,16 +40,18 @@ export default function Meals() {
         </div>
 
         {/* Summary Bar */}
-        <div className="mx-6 mb-4 flex items-center justify-between rounded-xl bg-card border border-border p-4">
-          <div>
-            <p className="text-sm text-muted-foreground">Today's Total</p>
-            <p className="text-xl font-bold text-foreground">{totalCalories} kcal</p>
+        {mealPlan && (
+          <div className="mx-6 mb-4 flex items-center justify-between rounded-xl bg-card border border-border p-4">
+            <div>
+              <p className="text-sm text-muted-foreground">Today's Total</p>
+              <p className="text-xl font-bold text-foreground">{mealPlan.total_calories} kcal</p>
+            </div>
+            <div className="text-right">
+              <p className="text-sm text-muted-foreground">Protein</p>
+              <p className="text-xl font-bold text-primary">{mealPlan.total_protein}g</p>
+            </div>
           </div>
-          <div className="text-right">
-            <p className="text-sm text-muted-foreground">Protein</p>
-            <p className="text-xl font-bold text-primary">{totalProtein}g</p>
-          </div>
-        </div>
+        )}
 
         {/* Action Buttons */}
         <div className="flex gap-3 px-6 mb-6">
@@ -62,25 +74,113 @@ export default function Meals() {
           </TabsList>
 
           <TabsContent value="today" className="mt-4 space-y-4">
-            {mockMeals.today.map((meal, index) => (
-              <MealCard
-                key={index}
-                {...meal}
-                onSwap={() => console.log("Swap meal:", meal.name)}
-              />
-            ))}
-            <Button variant="outline" className="w-full border-dashed">
-              <Plus className="mr-2 h-4 w-4" />
-              Add Custom Meal
-            </Button>
+            {isLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            ) : sortedMeals.length > 0 ? (
+              <>
+                {sortedMeals.map((meal) => (
+                  <MealCard
+                    key={meal.id}
+                    type={meal.meal_type as "breakfast" | "lunch" | "dinner" | "snack"}
+                    name={meal.name}
+                    calories={meal.calories}
+                    protein={meal.protein}
+                    carbs={meal.carbs}
+                    fats={meal.fats}
+                  />
+                ))}
+                <Button 
+                  variant="outline" 
+                  className="w-full border-dashed"
+                  onClick={generateMealPlan}
+                  disabled={isGenerating}
+                >
+                  {isGenerating ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="mr-2 h-4 w-4" />
+                  )}
+                  Regenerate Plan
+                </Button>
+              </>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <Sparkles className="h-12 w-12 text-muted-foreground mb-4" />
+                <p className="text-muted-foreground mb-4">No meal plan for today yet</p>
+                <Button 
+                  className="gradient-primary" 
+                  onClick={generateMealPlan}
+                  disabled={isGenerating}
+                >
+                  {isGenerating ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Generating...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="mr-2 h-4 w-4" />
+                      Generate Meal Plan
+                    </>
+                  )}
+                </Button>
+              </div>
+            )}
           </TabsContent>
 
-          <TabsContent value="tomorrow" className="mt-4">
-            <div className="flex flex-col items-center justify-center py-12 text-center">
-              <Calendar className="h-12 w-12 text-muted-foreground mb-4" />
-              <p className="text-muted-foreground">Tomorrow's meals will be generated soon</p>
-              <Button className="mt-4 gradient-primary">Generate Plan</Button>
-            </div>
+          <TabsContent value="tomorrow" className="mt-4 space-y-4">
+            {sortedTomorrowMeals.length > 0 ? (
+              <>
+                {sortedTomorrowMeals.map((meal) => (
+                  <MealCard
+                    key={meal.id}
+                    type={meal.meal_type as "breakfast" | "lunch" | "dinner" | "snack"}
+                    name={meal.name}
+                    calories={meal.calories}
+                    protein={meal.protein}
+                    carbs={meal.carbs}
+                    fats={meal.fats}
+                  />
+                ))}
+                <Button 
+                  variant="outline" 
+                  className="w-full border-dashed"
+                  onClick={generateTomorrowPlan}
+                  disabled={isGeneratingTomorrow}
+                >
+                  {isGeneratingTomorrow ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="mr-2 h-4 w-4" />
+                  )}
+                  Regenerate Plan
+                </Button>
+              </>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <Calendar className="h-12 w-12 text-muted-foreground mb-4" />
+                <p className="text-muted-foreground mb-4">Tomorrow's meals will be generated</p>
+                <Button 
+                  className="gradient-primary"
+                  onClick={generateTomorrowPlan}
+                  disabled={isGeneratingTomorrow}
+                >
+                  {isGeneratingTomorrow ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Generating...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="mr-2 h-4 w-4" />
+                      Generate Plan
+                    </>
+                  )}
+                </Button>
+              </div>
+            )}
           </TabsContent>
 
           <TabsContent value="week" className="mt-4">
