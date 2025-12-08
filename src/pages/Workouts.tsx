@@ -1,29 +1,94 @@
 import { useState } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { WorkoutCard } from "@/components/workouts/WorkoutCard";
+import { ActiveWorkout } from "@/components/workouts/ActiveWorkout";
+import { WorkoutComplete } from "@/components/workouts/WorkoutComplete";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Calendar, TrendingUp, Plus } from "lucide-react";
+import { Calendar, TrendingUp, Loader2, Sparkles } from "lucide-react";
+import { useWorkoutProgram } from "@/hooks/useWorkoutProgram";
 
-const mockWorkouts = {
-  today: [
-    { name: "Upper Body Strength", type: "strength" as const, duration: 45, calories: 300, exercises: 8, completed: false },
-  ],
-  week: [
-    { day: "Mon", name: "Upper Body Strength", type: "strength" as const, duration: 45, calories: 300, exercises: 8, completed: true },
-    { day: "Tue", name: "HIIT Cardio", type: "cardio" as const, duration: 30, calories: 400, exercises: 6, completed: true },
-    { day: "Wed", name: "Lower Body Strength", type: "strength" as const, duration: 50, calories: 350, exercises: 9, completed: true },
-    { day: "Thu", name: "Rest & Mobility", type: "flexibility" as const, duration: 20, calories: 100, exercises: 10, completed: false },
-    { day: "Fri", name: "Full Body Circuit", type: "strength" as const, duration: 40, calories: 350, exercises: 10, completed: false },
-    { day: "Sat", name: "Steady State Cardio", type: "cardio" as const, duration: 45, calories: 300, exercises: 1, completed: false },
-    { day: "Sun", name: "Active Recovery", type: "flexibility" as const, duration: 30, calories: 150, exercises: 8, completed: false },
-  ],
-};
+const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 export default function Workouts() {
   const [activeTab, setActiveTab] = useState("today");
+  const [activeWorkout, setActiveWorkout] = useState<{
+    id: string;
+    name: string;
+    exercises: any[];
+    duration: number;
+  } | null>(null);
+  const [showComplete, setShowComplete] = useState<{
+    name: string;
+    duration: number;
+    calories: number;
+    exercises: number;
+  } | null>(null);
 
-  const completedThisWeek = mockWorkouts.week.filter(w => w.completed).length;
+  const { 
+    program, 
+    isLoading, 
+    isGenerating, 
+    generateProgram, 
+    completeWorkout,
+    completeExercise 
+  } = useWorkoutProgram();
+
+  const today = new Date().getDay();
+  const todayWorkout = program?.workouts.find(w => w.day_of_week === today);
+  const completedThisWeek = program?.workouts.filter(w => w.is_completed).length || 0;
+
+  const handleStartWorkout = (workout: any) => {
+    setActiveWorkout({
+      id: workout.id,
+      name: workout.name,
+      exercises: workout.exercises,
+      duration: workout.duration_minutes,
+    });
+  };
+
+  const handleWorkoutComplete = async () => {
+    if (!activeWorkout) return;
+    
+    await completeWorkout(activeWorkout.id);
+    
+    const workout = program?.workouts.find(w => w.id === activeWorkout.id);
+    setShowComplete({
+      name: activeWorkout.name,
+      duration: activeWorkout.duration,
+      calories: 300, // Estimate
+      exercises: activeWorkout.exercises.length,
+    });
+    setActiveWorkout(null);
+  };
+
+  const handleCloseComplete = () => {
+    setShowComplete(null);
+  };
+
+  if (activeWorkout) {
+    return (
+      <ActiveWorkout
+        workoutName={activeWorkout.name}
+        exercises={activeWorkout.exercises}
+        onComplete={handleWorkoutComplete}
+        onClose={() => setActiveWorkout(null)}
+        onExerciseComplete={completeExercise}
+      />
+    );
+  }
+
+  if (showComplete) {
+    return (
+      <WorkoutComplete
+        workoutName={showComplete.name}
+        duration={showComplete.duration}
+        caloriesBurned={showComplete.calories}
+        exercisesCompleted={showComplete.exercises}
+        onClose={handleCloseComplete}
+      />
+    );
+  }
 
   return (
     <AppLayout>
@@ -35,18 +100,20 @@ export default function Workouts() {
         </div>
 
         {/* Progress Bar */}
-        <div className="mx-6 mb-4 rounded-xl bg-card border border-border p-4">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm text-muted-foreground">Weekly Progress</span>
-            <span className="text-sm font-medium text-primary">{completedThisWeek}/7 workouts</span>
+        {program && (
+          <div className="mx-6 mb-4 rounded-xl bg-card border border-border p-4">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm text-muted-foreground">Weekly Progress</span>
+              <span className="text-sm font-medium text-primary">{completedThisWeek}/7 workouts</span>
+            </div>
+            <div className="h-2 rounded-full bg-secondary">
+              <div
+                className="h-2 rounded-full bg-primary transition-all duration-500"
+                style={{ width: `${(completedThisWeek / 7) * 100}%` }}
+              />
+            </div>
           </div>
-          <div className="h-2 rounded-full bg-secondary">
-            <div
-              className="h-2 rounded-full bg-primary transition-all duration-500"
-              style={{ width: `${(completedThisWeek / 7) * 100}%` }}
-            />
-          </div>
-        </div>
+        )}
 
         {/* Action Buttons */}
         <div className="flex gap-3 px-6 mb-6">
@@ -69,38 +136,117 @@ export default function Workouts() {
           </TabsList>
 
           <TabsContent value="today" className="mt-4 space-y-4">
-            {mockWorkouts.today.map((workout, index) => (
-              <WorkoutCard
-                key={index}
-                {...workout}
-                onStart={() => console.log("Start workout:", workout.name)}
-              />
-            ))}
-            <Button variant="outline" className="w-full border-dashed">
-              <Plus className="mr-2 h-4 w-4" />
-              Add Custom Workout
-            </Button>
+            {isLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            ) : todayWorkout ? (
+              <>
+                <WorkoutCard
+                  name={todayWorkout.name}
+                  type={todayWorkout.workout_type}
+                  duration={todayWorkout.duration_minutes}
+                  calories={300}
+                  exercises={todayWorkout.exercises.length}
+                  completed={todayWorkout.is_completed}
+                  onStart={todayWorkout.is_completed ? undefined : () => handleStartWorkout(todayWorkout)}
+                />
+                <Button 
+                  variant="outline" 
+                  className="w-full border-dashed"
+                  onClick={generateProgram}
+                  disabled={isGenerating}
+                >
+                  {isGenerating ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="mr-2 h-4 w-4" />
+                  )}
+                  Generate New Program
+                </Button>
+              </>
+            ) : program ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <Calendar className="h-12 w-12 text-muted-foreground mb-4" />
+                <p className="text-muted-foreground mb-4">Rest day! No workout scheduled for today.</p>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <Sparkles className="h-12 w-12 text-muted-foreground mb-4" />
+                <p className="text-muted-foreground mb-4">No workout program yet</p>
+                <Button 
+                  className="gradient-primary" 
+                  onClick={generateProgram}
+                  disabled={isGenerating}
+                >
+                  {isGenerating ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Generating...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="mr-2 h-4 w-4" />
+                      Generate Workout Program
+                    </>
+                  )}
+                </Button>
+              </div>
+            )}
           </TabsContent>
 
           <TabsContent value="week" className="mt-4 space-y-4">
-            {mockWorkouts.week.map((workout, index) => (
-              <div key={index} className="flex items-center gap-3">
-                <div className="w-10 text-center">
-                  <span className="text-xs font-medium text-muted-foreground">{workout.day}</span>
-                </div>
-                <div className="flex-1">
-                  <WorkoutCard
-                    name={workout.name}
-                    type={workout.type}
-                    duration={workout.duration}
-                    calories={workout.calories}
-                    exercises={workout.exercises}
-                    completed={workout.completed}
-                    onStart={workout.completed ? undefined : () => console.log("Start:", workout.name)}
-                  />
-                </div>
+            {isLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
               </div>
-            ))}
+            ) : program?.workouts && program.workouts.length > 0 ? (
+              program.workouts
+                .slice()
+                .sort((a, b) => a.day_of_week - b.day_of_week)
+                .map((workout) => (
+                  <div key={workout.id} className="flex items-center gap-3">
+                    <div className="w-10 text-center">
+                      <span className="text-xs font-medium text-muted-foreground">
+                        {dayNames[workout.day_of_week]}
+                      </span>
+                    </div>
+                    <div className="flex-1">
+                      <WorkoutCard
+                        name={workout.name}
+                        type={workout.workout_type}
+                        duration={workout.duration_minutes}
+                        calories={300}
+                        exercises={workout.exercises.length}
+                        completed={workout.is_completed}
+                        onStart={workout.is_completed ? undefined : () => handleStartWorkout(workout)}
+                      />
+                    </div>
+                  </div>
+                ))
+            ) : (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <Sparkles className="h-12 w-12 text-muted-foreground mb-4" />
+                <p className="text-muted-foreground mb-4">No workout program yet</p>
+                <Button 
+                  className="gradient-primary" 
+                  onClick={generateProgram}
+                  disabled={isGenerating}
+                >
+                  {isGenerating ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Generating...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="mr-2 h-4 w-4" />
+                      Generate Workout Program
+                    </>
+                  )}
+                </Button>
+              </div>
+            )}
           </TabsContent>
 
           <TabsContent value="history" className="mt-4">

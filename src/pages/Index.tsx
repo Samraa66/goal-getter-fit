@@ -4,27 +4,77 @@ import { QuickStats } from "@/components/dashboard/QuickStats";
 import { MealCard } from "@/components/meals/MealCard";
 import { WorkoutCard } from "@/components/workouts/WorkoutCard";
 import { Button } from "@/components/ui/button";
-import { ChevronRight, Sparkles } from "lucide-react";
-import { Link } from "react-router-dom";
+import { ChevronRight, Sparkles, Loader2 } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
+import { useMealPlan } from "@/hooks/useMealPlan";
+import { useWorkoutProgram } from "@/hooks/useWorkoutProgram";
+import { useState, useEffect } from "react";
+import { supabase } from "@/integrations/supabase/client";
+
+const mealTypeOrder = ["breakfast", "lunch", "snack", "dinner"];
 
 export default function Index() {
-  // Mock data - will be replaced with real data
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const { mealPlan, isLoading: mealsLoading } = useMealPlan();
+  const { program, isLoading: workoutsLoading } = useWorkoutProgram();
+  const [profile, setProfile] = useState<{ full_name?: string; daily_calorie_target?: number } | null>(null);
+
+  useEffect(() => {
+    async function fetchProfile() {
+      if (!user) return;
+      const { data } = await supabase
+        .from("profiles")
+        .select("full_name, daily_calorie_target")
+        .eq("id", user.id)
+        .maybeSingle();
+      setProfile(data);
+    }
+    fetchProfile();
+  }, [user]);
+
+  const today = new Date().getDay();
+  const todayWorkout = program?.workouts.find(w => w.day_of_week === today);
+
+  // Calculate today's stats from meal plan
+  const consumedCalories = mealPlan?.total_calories || 0;
+  const consumedProtein = mealPlan?.total_protein || 0;
+  const targetCalories = profile?.daily_calorie_target || 2000;
+  const targetProtein = Math.round(targetCalories * 0.3 / 4); // 30% of calories from protein
+
   const todayStats = {
-    calories: { consumed: 1450, target: 2000 },
-    protein: { consumed: 85, target: 150 },
-    water: { consumed: 2.1, target: 3 },
-    streak: 7,
+    calories: { consumed: consumedCalories, target: targetCalories },
+    protein: { consumed: consumedProtein, target: targetProtein },
+    water: { consumed: 2.1, target: 3 }, // This would need its own tracking
+    streak: 7, // This would need calculation from progress_logs
   };
 
-  const calorieProgress = (todayStats.calories.consumed / todayStats.calories.target) * 100;
+  const calorieProgress = Math.min((todayStats.calories.consumed / todayStats.calories.target) * 100, 100);
+
+  // Get first two meals to display
+  const displayMeals = mealPlan?.meals
+    .slice()
+    .sort((a, b) => mealTypeOrder.indexOf(a.meal_type) - mealTypeOrder.indexOf(b.meal_type))
+    .slice(0, 2) || [];
+
+  const firstName = profile?.full_name?.split(" ")[0] || "there";
+  const greeting = getGreeting();
+
+  function getGreeting() {
+    const hour = new Date().getHours();
+    if (hour < 12) return "Good morning";
+    if (hour < 18) return "Good afternoon";
+    return "Good evening";
+  }
 
   return (
     <AppLayout>
       <div className="dark min-h-screen bg-background">
         {/* Header */}
         <div className="px-6 pt-12 pb-6">
-          <p className="text-muted-foreground">Good morning,</p>
-          <h1 className="text-2xl font-bold text-foreground">Alex</h1>
+          <p className="text-muted-foreground">{greeting},</p>
+          <h1 className="text-2xl font-bold text-foreground">{firstName}</h1>
         </div>
 
         {/* Main Progress Ring */}
@@ -37,7 +87,7 @@ export default function Index() {
             value={`${todayStats.calories.consumed}`}
           />
           <p className="mt-2 text-sm text-muted-foreground">
-            {todayStats.calories.target - todayStats.calories.consumed} kcal remaining
+            {Math.max(0, todayStats.calories.target - todayStats.calories.consumed)} kcal remaining
           </p>
         </div>
 
@@ -74,24 +124,31 @@ export default function Index() {
             </Link>
           </div>
           <div className="space-y-3">
-            <MealCard
-              type="breakfast"
-              name="Greek Yogurt Bowl"
-              calories={350}
-              protein={25}
-              carbs={40}
-              fats={12}
-              time="8:00 AM"
-            />
-            <MealCard
-              type="lunch"
-              name="Grilled Chicken Salad"
-              calories={450}
-              protein={35}
-              carbs={25}
-              fats={18}
-              time="12:30 PM"
-            />
+            {mealsLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-6 w-6 animate-spin text-primary" />
+              </div>
+            ) : displayMeals.length > 0 ? (
+              displayMeals.map((meal) => (
+                <MealCard
+                  key={meal.id}
+                  type={meal.meal_type as "breakfast" | "lunch" | "dinner" | "snack"}
+                  name={meal.name}
+                  calories={meal.calories}
+                  protein={meal.protein}
+                  carbs={meal.carbs}
+                  fats={meal.fats}
+                />
+              ))
+            ) : (
+              <div className="text-center py-6">
+                <p className="text-muted-foreground text-sm mb-3">No meals planned yet</p>
+                <Button size="sm" onClick={() => navigate("/meals")}>
+                  <Sparkles className="mr-2 h-4 w-4" />
+                  Generate Plan
+                </Button>
+              </div>
+            )}
           </div>
         </div>
 
@@ -106,14 +163,33 @@ export default function Index() {
               </Button>
             </Link>
           </div>
-          <WorkoutCard
-            name="Upper Body Strength"
-            type="strength"
-            duration={45}
-            calories={300}
-            exercises={8}
-            onStart={() => console.log("Start workout")}
-          />
+          {workoutsLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-primary" />
+            </div>
+          ) : todayWorkout ? (
+            <WorkoutCard
+              name={todayWorkout.name}
+              type={todayWorkout.workout_type}
+              duration={todayWorkout.duration_minutes}
+              calories={300}
+              exercises={todayWorkout.exercises.length}
+              completed={todayWorkout.is_completed}
+              onStart={todayWorkout.is_completed ? undefined : () => navigate("/workouts")}
+            />
+          ) : program ? (
+            <div className="text-center py-6 bg-card border border-border rounded-xl">
+              <p className="text-muted-foreground text-sm">Rest day! No workout scheduled.</p>
+            </div>
+          ) : (
+            <div className="text-center py-6">
+              <p className="text-muted-foreground text-sm mb-3">No workout program yet</p>
+              <Button size="sm" onClick={() => navigate("/workouts")}>
+                <Sparkles className="mr-2 h-4 w-4" />
+                Generate Program
+              </Button>
+            </div>
+          )}
         </div>
       </div>
     </AppLayout>
