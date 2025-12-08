@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { X, Play, Pause, SkipForward, CheckCircle } from "lucide-react";
+import { X, Play, Pause, SkipForward, CheckCircle, RefreshCw, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface Exercise {
@@ -21,20 +21,24 @@ interface ActiveWorkoutProps {
   onComplete: () => void;
   onClose: () => void;
   onExerciseComplete: (exerciseId: string) => void;
+  onSwapExercise?: (exerciseId: string, reason: string) => Promise<Exercise | null>;
 }
 
 export function ActiveWorkout({
   workoutName,
-  exercises,
+  exercises: initialExercises,
   onComplete,
   onClose,
   onExerciseComplete,
+  onSwapExercise,
 }: ActiveWorkoutProps) {
+  const [exercises, setExercises] = useState(initialExercises);
   const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
   const [currentSet, setCurrentSet] = useState(1);
   const [isResting, setIsResting] = useState(false);
   const [restTime, setRestTime] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
+  const [isSwapping, setIsSwapping] = useState(false);
 
   const currentExercise = exercises[currentExerciseIndex];
   const totalExercises = exercises.length;
@@ -80,6 +84,23 @@ export function ActiveWorkout({
   const handleSkipRest = () => {
     setIsResting(false);
     setRestTime(0);
+  };
+
+  const handleCantDoExercise = async () => {
+    if (!onSwapExercise || isSwapping) return;
+    
+    setIsSwapping(true);
+    try {
+      const newExercise = await onSwapExercise(currentExercise.id, "too_hard");
+      if (newExercise) {
+        setExercises(prev => 
+          prev.map((ex, i) => i === currentExerciseIndex ? newExercise : ex)
+        );
+        setCurrentSet(1);
+      }
+    } finally {
+      setIsSwapping(false);
+    }
   };
 
   const formatTime = (seconds: number) => {
@@ -182,6 +203,28 @@ export function ActiveWorkout({
               <CheckCircle className="mr-2 h-5 w-5" />
               Complete Set {currentSet}
             </Button>
+
+            {onSwapExercise && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full mt-3 text-muted-foreground hover:text-foreground"
+                onClick={handleCantDoExercise}
+                disabled={isSwapping}
+              >
+                {isSwapping ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Finding alternative...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                    Can't do this? Try an alternative
+                  </>
+                )}
+              </Button>
+            )}
           </div>
         )}
       </div>

@@ -7,14 +7,20 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Calendar, TrendingUp, Loader2, Sparkles } from "lucide-react";
 import { useWorkoutProgram } from "@/hooks/useWorkoutProgram";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
+import { useToast } from "@/hooks/use-toast";
 
 const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 export default function Workouts() {
+  const { user } = useAuth();
+  const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("today");
   const [activeWorkout, setActiveWorkout] = useState<{
     id: string;
     name: string;
+    workoutType: string;
     exercises: any[];
     duration: number;
   } | null>(null);
@@ -46,9 +52,59 @@ export default function Workouts() {
     setActiveWorkout({
       id: workout.id,
       name: workout.name,
+      workoutType: workout.workout_type,
       exercises: workout.exercises,
       duration: workout.duration_minutes,
     });
+  };
+
+  const handleSwapExercise = async (exerciseId: string, reason: string) => {
+    if (!activeWorkout || !user) return null;
+    
+    const currentExercise = activeWorkout.exercises.find(e => e.id === exerciseId);
+    if (!currentExercise) return null;
+
+    try {
+      // Get user profile for context
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("experience_level, workout_location")
+        .eq("id", user.id)
+        .single();
+
+      const { data, error } = await supabase.functions.invoke("swap-exercise", {
+        body: {
+          currentExercise,
+          reason,
+          profile,
+          workoutType: activeWorkout.workoutType,
+        },
+      });
+
+      if (error) throw error;
+
+      // Return the new exercise with the same ID so it replaces the old one
+      const newExercise = {
+        ...data,
+        id: exerciseId,
+        is_completed: false,
+      };
+
+      toast({
+        title: "Exercise swapped!",
+        description: `Try ${data.name} instead`,
+      });
+
+      return newExercise;
+    } catch (error) {
+      console.error("Error swapping exercise:", error);
+      toast({
+        title: "Couldn't find alternative",
+        description: "Please try again",
+        variant: "destructive",
+      });
+      return null;
+    }
   };
 
   const handleWorkoutComplete = async () => {
@@ -78,6 +134,7 @@ export default function Workouts() {
         onComplete={handleWorkoutComplete}
         onClose={() => setActiveWorkout(null)}
         onExerciseComplete={completeExercise}
+        onSwapExercise={handleSwapExercise}
       />
     );
   }
