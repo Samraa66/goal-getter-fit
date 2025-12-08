@@ -39,6 +39,10 @@ export default function Workouts() {
   const completedThisWeek = program?.workouts.filter(w => w.is_completed).length || 0;
 
   const handleStartWorkout = (workout: any) => {
+    // Don't start workout if no exercises
+    if (!workout.exercises || workout.exercises.length === 0) {
+      return;
+    }
     setActiveWorkout({
       id: workout.id,
       name: workout.name,
