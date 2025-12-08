@@ -11,7 +11,7 @@ serve(async (req) => {
   }
 
   try {
-    const { messages } = await req.json();
+    const { messages, profile } = await req.json();
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
 
     if (!LOVABLE_API_KEY) {
@@ -19,6 +19,27 @@ serve(async (req) => {
     }
 
     console.log("AI Coach: Processing request with", messages.length, "messages");
+
+    // Build user context from profile
+    let userContext = "";
+    if (profile) {
+      const parts = [];
+      if (profile.fitness_goal) parts.push(`Goal: ${profile.fitness_goal}`);
+      if (profile.experience_level) parts.push(`Experience: ${profile.experience_level}`);
+      if (profile.workout_location) parts.push(`Workouts at: ${profile.workout_location}`);
+      if (profile.dietary_preference) parts.push(`Diet: ${profile.dietary_preference}`);
+      if (profile.daily_calorie_target) parts.push(`Daily calories: ${profile.daily_calorie_target}`);
+      if (profile.weight_current) parts.push(`Current weight: ${profile.weight_current}kg`);
+      if (profile.weight_goal) parts.push(`Goal weight: ${profile.weight_goal}kg`);
+      if (profile.height_cm) parts.push(`Height: ${profile.height_cm}cm`);
+      if (profile.age) parts.push(`Age: ${profile.age}`);
+      if (profile.allergies?.length) parts.push(`Allergies: ${profile.allergies.join(", ")}`);
+      if (profile.disliked_foods?.length) parts.push(`Dislikes: ${profile.disliked_foods.join(", ")}`);
+      
+      if (parts.length > 0) {
+        userContext = `\n\nUser Profile:\n${parts.join("\n")}`;
+      }
+    }
 
     const systemPrompt = `You are an expert AI fitness and nutrition coach. You help users achieve their health and fitness goals with personalized advice.
 
@@ -32,12 +53,12 @@ Your expertise includes:
 Guidelines:
 - Be encouraging and supportive
 - Give specific, actionable advice
-- Ask clarifying questions when needed
-- Consider the user's goals and preferences
+- DO NOT ask for information that's already in the user profile below
+- Use the user's profile data to personalize all recommendations
 - Keep responses concise but helpful
 - Use emojis sparingly to add warmth
 
-Always prioritize user safety - recommend consulting healthcare professionals for medical concerns.`;
+Always prioritize user safety - recommend consulting healthcare professionals for medical concerns.${userContext}`;
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
