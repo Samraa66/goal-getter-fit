@@ -160,7 +160,7 @@ export default function Coach() {
 
         {/* Input */}
         <div className="p-4 border-t border-border pb-24">
-          <form onSubmit={handleSubmit} className="flex gap-2">
+          <form onSubmit={handleSubmit} className="flex gap-2 text-secondary-foreground">
             <Input value={input} onChange={e => setInput(e.target.value)} placeholder="Ask your coach..." className="flex-1 bg-card" disabled={isLoading} />
             <Button type="submit" size="icon" className="gradient-primary" disabled={!input.trim() || isLoading}>
               <Send className="h-4 w-4" />
