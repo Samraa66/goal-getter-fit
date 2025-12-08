@@ -6,22 +6,52 @@ import { Input } from "@/components/ui/input";
 import { Send, Sparkles } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
+
 interface Message {
   role: "user" | "assistant";
   content: string;
 }
+
+interface UserProfile {
+  fitness_goal: string | null;
+  experience_level: string | null;
+  workout_location: string | null;
+  dietary_preference: string | null;
+  allergies: string[] | null;
+  disliked_foods: string[] | null;
+  daily_calorie_target: number | null;
+  weight_current: number | null;
+  weight_goal: number | null;
+  height_cm: number | null;
+  age: number | null;
+}
+
 const SUGGESTIONS = ["What should I eat for dinner?", "How can I hit my protein goals?", "Suggest a quick workout", "Tips for better sleep"];
 export default function Coach() {
+  const { user } = useAuth();
   const [messages, setMessages] = useState<Message[]>([{
     role: "assistant",
     content: "Hey! 👋 I'm your AI fitness coach. Ask me anything about nutrition, workouts, or your fitness goals. How can I help you today?"
   }]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const {
-    toast
-  } = useToast();
+  const { toast } = useToast();
+
+  useEffect(() => {
+    const fetchProfile = async () => {
+      if (!user) return;
+      const { data } = await supabase
+        .from("profiles")
+        .select("fitness_goal, experience_level, workout_location, dietary_preference, allergies, disliked_foods, daily_calorie_target, weight_current, weight_goal, height_cm, age")
+        .eq("id", user.id)
+        .single();
+      if (data) setProfile(data);
+    };
+    fetchProfile();
+  }, [user]);
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({
       behavior: "smooth"
@@ -50,7 +80,8 @@ export default function Coach() {
           messages: [...messages, userMessage].map(m => ({
             role: m.role,
             content: m.content
-          }))
+          })),
+          profile: profile
         })
       });
       if (!response.ok) {
