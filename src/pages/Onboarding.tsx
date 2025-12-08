@@ -49,6 +49,7 @@ interface OnboardingData {
   age: string;
   workoutsPerWeek: number;
   dailyCalorieTarget: number;
+  dailyFoodBudget: string;
 }
 
 const goals = [
@@ -108,6 +109,7 @@ export default function Onboarding() {
     age: "",
     workoutsPerWeek: 3,
     dailyCalorieTarget: 2000,
+    dailyFoodBudget: "",
   });
 
   const totalSteps = 6;
@@ -137,6 +139,7 @@ export default function Onboarding() {
           height_cm: data.height ? parseInt(data.height) : null,
           age: data.age ? parseInt(data.age) : null,
           daily_calorie_target: data.dailyCalorieTarget,
+          daily_food_budget: data.dailyFoodBudget ? parseFloat(data.dailyFoodBudget) : null,
           onboarding_completed: true,
         })
         .eq("id", user.id);
@@ -541,8 +544,28 @@ export default function Onboarding() {
                     {food}
                   </Button>
                 ))}
-              </div>
             </div>
+
+            <div>
+              <Label htmlFor="budget" className="text-foreground mb-3 block font-medium">
+                Daily food budget (optional)
+              </Label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
+                <Input
+                  id="budget"
+                  type="number"
+                  placeholder="15"
+                  value={data.dailyFoodBudget}
+                  onChange={(e) => setData({ ...data, dailyFoodBudget: e.target.value })}
+                  className="bg-card text-lg h-12 pl-8"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground mt-2">
+                Set a budget to get affordable meal suggestions that won't break the bank.
+              </p>
+            </div>
+          </div>
           </div>
         </OnboardingStep>
       )}
