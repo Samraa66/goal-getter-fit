@@ -20,6 +20,11 @@ serve(async (req) => {
 
     console.log("Generate Meal Plan: Creating plan for", date);
 
+    const hasBudget = profile.daily_food_budget && profile.daily_food_budget > 0;
+    const budgetInstruction = hasBudget 
+      ? `- Daily Food Budget: $${profile.daily_food_budget} (IMPORTANT: Suggest affordable, budget-friendly ingredients that fit within this limit. Prioritize cost-effective proteins like eggs, beans, lentils, chicken thighs, canned fish. Avoid expensive items like steak, salmon, exotic ingredients.)`
+      : '';
+
     const systemPrompt = `You are an expert nutritionist AI. Generate a personalized daily meal plan based on the user's profile.
 
 User Profile:
@@ -28,6 +33,7 @@ User Profile:
 - Dietary Preference: ${profile.dietary_preference || 'none specified'}
 - Allergies: ${(profile.allergies || []).join(', ') || 'none'}
 - Disliked Foods: ${(profile.disliked_foods || []).join(', ') || 'none'}
+${budgetInstruction}
 
 Generate exactly 4 meals: breakfast, lunch, snack, and dinner.
 
@@ -55,7 +61,7 @@ Make sure:
 1. Total calories are close to the target (${profile.daily_calorie_target || 2000})
 2. Meals are balanced and nutritious
 3. Respect dietary preferences and allergies
-4. Include variety and practical, easy-to-make meals`;
+4. Include variety and practical, easy-to-make meals${hasBudget ? '\n5. PRIORITIZE AFFORDABILITY - use budget-friendly ingredients that fit within the daily food budget' : ''}`;
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
