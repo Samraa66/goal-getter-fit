@@ -20,45 +20,174 @@ serve(async (req) => {
 
     console.log("Generate Workout Program: Creating program for user");
 
-    const systemPrompt = `You are an expert fitness trainer AI. Generate a personalized weekly workout program based on the user's profile.
+    const experienceLevel = profile.experience_level || 'beginner';
+    const fitnessGoal = profile.fitness_goal || 'general_fitness';
+    const workoutLocation = profile.workout_location || 'gym';
+    const availableTime = profile.available_time_minutes || 60;
+    
+    // Determine training split based on experience
+    let trainingSplit = "Full Body (3x/week)";
+    let daysPerWeek = 3;
+    let setsPerMuscle = "10-12";
+    
+    if (experienceLevel === 'intermediate') {
+      trainingSplit = "Upper/Lower Split (4x/week)";
+      daysPerWeek = 4;
+      setsPerMuscle = "12-16";
+    } else if (experienceLevel === 'advanced') {
+      trainingSplit = "Push/Pull/Legs (6x/week)";
+      daysPerWeek = 6;
+      setsPerMuscle = "16-20";
+    }
 
-User Profile:
-- Fitness Goal: ${profile.fitness_goal || 'general fitness'}
-- Experience Level: ${profile.experience_level || 'beginner'}
-- Workout Location: ${profile.workout_location || 'gym'}
+    // Adjust for goal
+    let goalSpecificGuidance = "";
+    if (fitnessGoal === 'fat_loss' || fitnessGoal === 'lose_weight') {
+      goalSpecificGuidance = `
+FAT LOSS SPECIFIC:
+- Include 2-3 cardio sessions (HIIT or steady-state)
+- Shorter rest periods (45-60 seconds)
+- Higher rep ranges (12-15) for metabolic stress
+- Superset exercises when possible
+- Add finisher circuits at end of workouts`;
+    } else if (fitnessGoal === 'muscle_gain' || fitnessGoal === 'build_muscle') {
+      goalSpecificGuidance = `
+MUSCLE GAIN SPECIFIC:
+- Focus on progressive overload
+- Longer rest periods (90-180 seconds) for strength exercises
+- Mix of rep ranges: 6-8 (strength), 8-12 (hypertrophy), 12-15 (metabolic)
+- Prioritize compound movements
+- Include isolation work for lagging muscles`;
+    } else if (fitnessGoal === 'strength') {
+      goalSpecificGuidance = `
+STRENGTH SPECIFIC:
+- Lower rep ranges (3-6) for main lifts
+- Long rest periods (3-5 minutes) between heavy sets
+- Focus on Squat, Bench, Deadlift, Overhead Press
+- Accessory work to support main lifts
+- RIR of 1-2 on main lifts`;
+    }
 
-Generate a 7-day workout program with one workout per day. Include rest/recovery days.
+    const equipmentGuidance = workoutLocation === 'home' 
+      ? `
+HOME WORKOUT EQUIPMENT:
+- Assume: bodyweight, resistance bands, possibly dumbbells
+- Substitute barbell movements with dumbbell or bodyweight alternatives
+- Include floor exercises, push-up variations, lunges, squats
+- Use furniture for dips, rows, elevated push-ups if needed`
+      : `
+GYM EQUIPMENT AVAILABLE:
+- Full access to barbells, dumbbells, cable machines, machines
+- Include compound barbell movements (squat, deadlift, bench, row)
+- Use machines for isolation and safety
+- Cable exercises for constant tension`;
 
-IMPORTANT: You must respond with ONLY valid JSON, no markdown, no explanation. Use this exact format:
+    const systemPrompt = `You are an elite strength & conditioning coach and certified personal trainer (CSCS, NSCA-CPT). Generate an evidence-based, periodized weekly workout program.
+
+====== USER PROFILE ======
+- Age: ${profile.age || 30} years
+- Height: ${profile.height_cm || 170} cm
+- Current Weight: ${profile.weight_current || 70} kg
+- Goal Weight: ${profile.weight_goal || profile.weight_current || 70} kg
+- Experience Level: ${experienceLevel}
+- Fitness Goal: ${fitnessGoal}
+- Workout Location: ${workoutLocation}
+- Available Time: ${availableTime} minutes per session
+- Injuries/Limitations: ${profile.injuries || 'none reported'}
+
+====== PROGRAM DESIGN PRINCIPLES ======
+Recommended Split: ${trainingSplit}
+Weekly Sets Per Muscle Group: ${setsPerMuscle} sets (evidence-based hypertrophy range)
+${goalSpecificGuidance}
+${equipmentGuidance}
+
+====== SCIENTIFIC GUIDELINES ======
+1. PROGRESSIVE OVERLOAD: Each week should allow for progression (weight, reps, or sets)
+2. VOLUME: ${setsPerMuscle} weekly sets per major muscle group
+3. FREQUENCY: Each muscle 2-3x per week for optimal protein synthesis
+4. INTENSITY: Use RIR (Reps In Reserve) to prescribe intensity
+   - RIR 3-4: Warm-up/technique work
+   - RIR 2-3: Hypertrophy focus
+   - RIR 1-2: Strength focus
+   - RIR 0-1: Max effort (use sparingly)
+5. REST PERIODS:
+   - Compound strength: 2-3 minutes
+   - Hypertrophy: 60-90 seconds
+   - Isolation: 45-60 seconds
+6. EXERCISE ORDER: Compound → Isolation, Large → Small muscle groups
+7. WARM-UP: Include 5-10 min cardio + dynamic stretching before each workout
+
+====== WORKOUT STRUCTURE ======
+For ${experienceLevel} level, generate a ${daysPerWeek}-day program:
+${experienceLevel === 'beginner' ? `
+- Day 1: Full Body A
+- Day 2: Rest
+- Day 3: Full Body B
+- Day 4: Rest
+- Day 5: Full Body C
+- Day 6-7: Rest/Active Recovery` : ''}
+${experienceLevel === 'intermediate' ? `
+- Day 1: Upper Body (Push focus)
+- Day 2: Lower Body (Quad focus)
+- Day 3: Rest
+- Day 4: Upper Body (Pull focus)
+- Day 5: Lower Body (Hinge focus)
+- Day 6-7: Rest/Active Recovery` : ''}
+${experienceLevel === 'advanced' ? `
+- Day 1: Push (Chest, Shoulders, Triceps)
+- Day 2: Pull (Back, Biceps, Rear Delts)
+- Day 3: Legs (Quads, Hamstrings, Glutes, Calves)
+- Day 4: Push (Volume focus)
+- Day 5: Pull (Volume focus)
+- Day 6: Legs (Volume focus)
+- Day 7: Rest/Active Recovery` : ''}
+
+====== EXERCISE REQUIREMENTS ======
+Each workout must include:
+- ${experienceLevel === 'beginner' ? '4-6' : experienceLevel === 'intermediate' ? '5-7' : '6-8'} exercises
+- Clear exercise names (use common names)
+- Sets: 3-5 per exercise
+- Reps: appropriate for goal (strength: 3-6, hypertrophy: 8-12, endurance: 12-15)
+- RIR prescription for intensity
+- Rest periods in seconds
+- Brief notes for form cues or variations
+
+====== OUTPUT FORMAT (STRICT JSON, NO MARKDOWN) ======
 {
-  "program_name": "Week 1: Getting Started",
-  "program_description": "A balanced program for beginners",
+  "program_name": "Week 1: ${fitnessGoal} - ${trainingSplit}",
+  "program_description": "Brief description of the program focus and expected outcomes",
+  "training_split": "${trainingSplit}",
+  "days_per_week": ${daysPerWeek},
   "workouts": [
     {
       "day_of_week": 0,
-      "name": "Upper Body Strength",
+      "name": "Workout Name",
       "workout_type": "strength",
-      "duration_minutes": 45,
+      "focus": "Push/Pull/Legs/Full Body/Upper/Lower",
+      "duration_minutes": ${availableTime},
+      "warm_up": "5 min light cardio, arm circles, leg swings, hip circles",
       "exercises": [
         {
-44:           "name": "Push-ups",
-45:           "sets": 3,
-46:           "reps": "10-12",
-47:           "rest_seconds": 45,
-48:           "notes": "Keep core tight"
-49:         }
-      ]
+          "name": "Exercise Name",
+          "sets": 4,
+          "reps": "8-10",
+          "rir": 2,
+          "rest_seconds": 90,
+          "equipment": "barbell/dumbbell/bodyweight/cable/machine",
+          "notes": "Form cue or variation note"
+        }
+      ],
+      "cool_down": "5 min stretching, foam rolling"
     }
   ]
 }
 
-Guidelines:
-- day_of_week: 0=Sunday, 1=Monday, ..., 6=Saturday
-- workout_type must be one of: "strength", "cardio", "flexibility"
-- Include 1-2 rest/recovery days with flexibility workouts
-- For ${profile.experience_level || 'beginner'}: ${profile.experience_level === 'advanced' ? '5-7 exercises per workout' : profile.experience_level === 'intermediate' ? '4-6 exercises' : '3-5 exercises'}
-- Tailor exercises for ${profile.workout_location || 'gym'} setting
-- Focus on ${profile.fitness_goal || 'general fitness'} goal`;
+CRITICAL RULES:
+1. day_of_week: 0=Sunday, 1=Monday, ..., 6=Saturday
+2. workout_type: "strength", "cardio", "flexibility", or "rest"
+3. All rest days should have workout_type "rest" with minimal/no exercises
+4. Fit TOTAL workout time (warm-up + exercises + rest + cool-down) within ${availableTime} minutes
+5. Output ONLY valid JSON. No markdown, no explanations, no code blocks.`;
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -70,7 +199,7 @@ Guidelines:
         model: "google/gemini-2.5-flash",
         messages: [
           { role: "system", content: systemPrompt },
-          { role: "user", content: "Generate a weekly workout program. Remember to output ONLY valid JSON." },
+          { role: "user", content: "Generate a complete weekly workout program. Output ONLY valid JSON." },
         ],
       }),
     });

@@ -20,48 +20,104 @@ serve(async (req) => {
 
     console.log("Generate Meal Plan: Creating plan for", date);
 
-    const hasBudget = profile.daily_food_budget && profile.daily_food_budget > 0;
-    const budgetInstruction = hasBudget 
-      ? `- Daily Food Budget: $${profile.daily_food_budget} (IMPORTANT: Suggest affordable, budget-friendly ingredients that fit within this limit. Prioritize cost-effective proteins like eggs, beans, lentils, chicken thighs, canned fish. Avoid expensive items like steak, salmon, exotic ingredients.)`
-      : '';
+    // Calculate BMR and macros based on profile
+    const weight = profile.weight_current || 70;
+    const height = profile.height_cm || 170;
+    const age = profile.age || 30;
+    const calorieTarget = profile.daily_calorie_target || 2000;
+    const dailyBudget = profile.daily_food_budget || null;
+    
+    // Calculate protein target (1.6-2.2g/kg based on goal)
+    let proteinPerKg = 1.8;
+    if (profile.fitness_goal === 'muscle_gain') proteinPerKg = 2.2;
+    if (profile.fitness_goal === 'fat_loss') proteinPerKg = 2.0;
+    const proteinTarget = Math.round(weight * proteinPerKg);
+    
+    // Fat: 25% of calories, Carbs: remainder
+    const fatTarget = Math.round((calorieTarget * 0.25) / 9);
+    const carbTarget = Math.round((calorieTarget - (proteinTarget * 4) - (fatTarget * 9)) / 4);
 
-    const systemPrompt = `You are an expert nutritionist AI. Generate a personalized daily meal plan based on the user's profile.
+    const budgetTierInfo = dailyBudget ? `
+BUDGET CONSTRAINT: $${dailyBudget}/day
+Budget-Tier Food Selection Rules:
+- LOW BUDGET ($5-10/day): Prioritize eggs, oats, rice, potatoes, lentils, beans, canned tuna, frozen vegetables, bananas, peanut butter, whole milk, cottage cheese
+- MEDIUM BUDGET ($10-20/day): Add chicken breast, turkey, Greek yogurt, fresh vegetables, ground beef, cheese, bread
+- HIGH BUDGET ($20+/day): Can include salmon, steak, berries, avocados, nuts, specialty items
 
-User Profile:
-- Fitness Goal: ${profile.fitness_goal || 'general health'}
-- Daily Calorie Target: ${profile.daily_calorie_target || 2000} kcal
-- Dietary Preference: ${profile.dietary_preference || 'none specified'}
+CRITICAL BUDGET RULES:
+1. Total daily meal cost MUST NOT exceed $${dailyBudget}
+2. Estimate realistic grocery store prices for each ingredient
+3. If budget is tight, automatically substitute expensive items with affordable alternatives
+4. Include estimated cost per meal in output
+5. If target macros cannot be perfectly achieved within budget, get as close as possible and note any compromises` : '';
+
+    const systemPrompt = `You are an elite sports nutritionist and registered dietitian. Generate a precisely calculated, personalized daily meal plan.
+
+====== USER PROFILE ======
+- Age: ${age} years
+- Height: ${height} cm
+- Current Weight: ${weight} kg
+- Goal Weight: ${profile.weight_goal || weight} kg
+- Fitness Goal: ${profile.fitness_goal || 'general_health'}
+- Dietary Preference: ${profile.dietary_preference || 'omnivore'}
 - Allergies: ${(profile.allergies || []).join(', ') || 'none'}
 - Disliked Foods: ${(profile.disliked_foods || []).join(', ') || 'none'}
-${budgetInstruction}
+${budgetTierInfo}
 
-Generate exactly 4 meals: breakfast, lunch, snack, and dinner.
+====== NUTRITIONAL TARGETS (MUST FOLLOW PRECISELY) ======
+- Daily Calories: ${calorieTarget} kcal (±5% tolerance: ${Math.round(calorieTarget * 0.95)}-${Math.round(calorieTarget * 1.05)})
+- Protein: ${proteinTarget}g (${proteinPerKg}g/kg for ${profile.fitness_goal || 'maintenance'})
+- Fat: ${fatTarget}g (25% of calories)
+- Carbs: ${carbTarget}g (remaining calories)
 
-IMPORTANT: You must respond with ONLY valid JSON, no markdown, no explanation. Use this exact format:
+====== MEAL STRUCTURE ======
+Generate exactly 4 meals with this calorie distribution:
+- Breakfast: ~25% of daily calories (~${Math.round(calorieTarget * 0.25)} kcal)
+- Lunch: ~30% of daily calories (~${Math.round(calorieTarget * 0.30)} kcal)
+- Snack: ~15% of daily calories (~${Math.round(calorieTarget * 0.15)} kcal)
+- Dinner: ~30% of daily calories (~${Math.round(calorieTarget * 0.30)} kcal)
+
+====== REQUIREMENTS ======
+1. Each meal must include exact gram measurements for all ingredients
+2. Provide step-by-step cooking instructions (simple, realistic, under 20 minutes prep)
+3. Prioritize whole foods, lean proteins, complex carbs, healthy fats
+4. Ensure protein is distributed across all meals (25-40g per main meal)
+5. Include a variety of vegetables and micronutrient-dense foods
+6. Make meals practical and easy to prepare
+7. NEVER include any foods the user is allergic to or dislikes
+8. Respect dietary preferences strictly (vegetarian, vegan, etc.)
+
+====== OUTPUT FORMAT (STRICT JSON, NO MARKDOWN) ======
 {
   "meals": [
     {
       "meal_type": "breakfast",
-      "name": "Meal name",
-      "description": "Brief description",
-      "calories": 350,
-      "protein": 25,
-      "carbs": 40,
-      "fats": 12,
-      "recipe": "Brief cooking instructions"
+      "name": "Meal Name",
+      "description": "Brief appetizing description",
+      "ingredients": [
+        {"name": "Ingredient", "grams": 100, "estimated_cost": 0.50}
+      ],
+      "calories": 500,
+      "protein": 35,
+      "carbs": 45,
+      "fats": 18,
+      "recipe": "Step 1: ... Step 2: ... Step 3: ...",
+      "prep_time_minutes": 15,
+      "estimated_cost": 2.50
     }
   ],
-  "total_calories": 1800,
-  "total_protein": 120,
-  "total_carbs": 200,
-  "total_fats": 60
+  "total_calories": ${calorieTarget},
+  "total_protein": ${proteinTarget},
+  "total_carbs": ${carbTarget},
+  "total_fats": ${fatTarget},
+  "total_cost": 0.00,
+  "grocery_list": [
+    {"name": "Ingredient", "grams": 100, "estimated_cost": 0.50}
+  ],
+  "budget_notes": "Any notes about budget constraints or substitutions made"
 }
 
-Make sure:
-1. Total calories are close to the target (${profile.daily_calorie_target || 2000})
-2. Meals are balanced and nutritious
-3. Respect dietary preferences and allergies
-4. Include variety and practical, easy-to-make meals${hasBudget ? '\n5. PRIORITIZE AFFORDABILITY - use budget-friendly ingredients that fit within the daily food budget' : ''}`;
+CRITICAL: Output ONLY valid JSON. No markdown, no explanations, no code blocks.`;
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -73,7 +129,7 @@ Make sure:
         model: "google/gemini-2.5-flash",
         messages: [
           { role: "system", content: systemPrompt },
-          { role: "user", content: `Generate a meal plan for ${date}. Remember to output ONLY valid JSON.` },
+          { role: "user", content: `Generate a complete meal plan for ${date}. Output ONLY valid JSON.` },
         ],
       }),
     });
@@ -105,7 +161,6 @@ Make sure:
     // Parse the JSON response
     let mealPlan;
     try {
-      // Clean the response - remove markdown code blocks if present
       let cleanContent = content.trim();
       if (cleanContent.startsWith("```json")) {
         cleanContent = cleanContent.slice(7);
