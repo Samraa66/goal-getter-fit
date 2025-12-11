@@ -117,10 +117,10 @@ export function MealCard({
               </Button>
             </CollapsibleTrigger>
             <CollapsibleContent className="mt-2">
-              <div className="rounded-lg bg-secondary/30 p-3 text-sm text-muted-foreground">
-                {recipe.split('\n').map((step, index) => (
-                  <p key={index} className={index > 0 ? "mt-2" : ""}>
-                    {step}
+              <div className="rounded-lg bg-secondary/30 p-3 text-sm text-muted-foreground space-y-3">
+                {recipe.split(/(?=Step \d+:)/i).filter(Boolean).map((step, index) => (
+                  <p key={index}>
+                    {step.trim()}
                   </p>
                 ))}
               </div>
