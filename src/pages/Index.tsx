@@ -70,7 +70,7 @@ export default function Index() {
 
   return (
     <AppLayout>
-      <div className="dark min-h-screen bg-background">
+      <div className="dark bg-background">
         {/* Header */}
         <div className="px-6 pt-12 pb-6">
           <p className="text-muted-foreground">{greeting},</p>
