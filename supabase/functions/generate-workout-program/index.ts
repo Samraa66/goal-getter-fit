@@ -31,7 +31,7 @@ serve(async (req) => {
     let setsPerMuscle = "10-12";
     
     if (experienceLevel === 'intermediate') {
-      trainingSplit = "Upper/Lower Split (4x/week)";
+      trainingSplit = "Push/Pull/Legs (3-4x/week)";
       daysPerWeek = 4;
       setsPerMuscle = "12-16";
     } else if (experienceLevel === 'advanced') {
@@ -127,11 +127,11 @@ ${experienceLevel === 'beginner' ? `
 - Day 5: Full Body C
 - Day 6-7: Rest/Active Recovery` : ''}
 ${experienceLevel === 'intermediate' ? `
-- Day 1: Upper Body (Push focus)
-- Day 2: Lower Body (Quad focus)
-- Day 3: Rest
-- Day 4: Upper Body (Pull focus)
-- Day 5: Lower Body (Hinge focus)
+- Day 1: Push (Chest, Shoulders, Triceps)
+- Day 2: Pull (Back, Biceps, Rear Delts)
+- Day 3: Legs (Quads, Hamstrings, Glutes, Calves)
+- Day 4: Rest
+- Day 5: Push or Pull (rotating)
 - Day 6-7: Rest/Active Recovery` : ''}
 ${experienceLevel === 'advanced' ? `
 - Day 1: Push (Chest, Shoulders, Triceps)
