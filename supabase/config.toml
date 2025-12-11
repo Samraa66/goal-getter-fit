@@ -12,5 +12,8 @@ verify_jwt = false
 [functions.generate-workout-program]
 verify_jwt = false
 
+[functions.generate-grocery-list]
+verify_jwt = false
+
 [functions.swap-exercise]
 verify_jwt = false
