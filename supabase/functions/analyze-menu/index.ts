@@ -11,7 +11,7 @@ serve(async (req) => {
   }
 
   try {
-    const { image } = await req.json();
+    const { image, mealType, profile } = await req.json();
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
 
     if (!LOVABLE_API_KEY) {
@@ -22,37 +22,88 @@ serve(async (req) => {
       throw new Error("No image provided");
     }
 
-    console.log("Menu Scanner: Analyzing menu image");
+    console.log("Menu Scanner: Analyzing menu image for", mealType);
+    console.log("Menu Scanner: User profile:", JSON.stringify(profile || {}, null, 2));
 
-    const systemPrompt = `You are an expert nutritionist analyzing a restaurant menu image. Your task is to:
+    // Calculate user targets
+    const calorieTarget = profile?.daily_calorie_target || 2000;
+    const weightKg = profile?.weight_current || 70;
+    const goal = profile?.fitness_goal || "maintain";
+    
+    // Protein: 1.6-2.2g per kg based on goal
+    const proteinMultiplier = goal === "muscle_gain" ? 2.2 : goal === "fat_loss" ? 2.0 : 1.6;
+    const proteinTarget = Math.round(weightKg * proteinMultiplier);
+    
+    // Meal allocation
+    const mealAllocations: Record<string, { calories: number; protein: number }> = {
+      breakfast: { calories: Math.round(calorieTarget * 0.25), protein: Math.round(proteinTarget * 0.25) },
+      lunch: { calories: Math.round(calorieTarget * 0.30), protein: Math.round(proteinTarget * 0.30) },
+      dinner: { calories: Math.round(calorieTarget * 0.30), protein: Math.round(proteinTarget * 0.30) },
+      snack: { calories: Math.round(calorieTarget * 0.15), protein: Math.round(proteinTarget * 0.15) },
+    };
+    
+    const mealAllocation = mealAllocations[mealType] || mealAllocations.lunch;
+    const dietaryPreference = profile?.dietary_preference || "none";
+    const allergies = profile?.allergies?.join(", ") || "none";
 
-1. Read and understand the menu items
-2. Identify healthy options based on general fitness goals
-3. Suggest modifications to make dishes healthier
+    const goalDescriptions: Record<string, string> = {
+      fat_loss: "lose weight while maintaining muscle mass",
+      muscle_gain: "build muscle and gain strength",
+      maintain: "maintain current weight and stay healthy",
+      performance: "optimize athletic performance",
+    };
+
+    const systemPrompt = `You are an expert nutritionist helping someone who wants to ${goalDescriptions[goal] || "stay healthy"}.
+
+USER PROFILE:
+- Fitness Goal: ${goal}
+- Daily Calorie Target: ${calorieTarget} kcal
+- Daily Protein Target: ${proteinTarget}g
+- Dietary Preference: ${dietaryPreference}
+- Allergies/Restrictions: ${allergies}
+
+MEAL CONTEXT:
+- This is for their ${mealType.toUpperCase()}
+- Ideal calories for this meal: ~${mealAllocation.calories} kcal
+- Ideal protein for this meal: ~${mealAllocation.protein}g
+
+YOUR TASK:
+1. Analyze the restaurant menu in the image
+2. Identify options that best fit the user's ${mealType} targets
+3. Explain HOW each option helps them reach their ${goal} goal
+4. Suggest modifications to make dishes fit their plan better
+
+CRITICAL: Your recommendations must be PERSONALIZED. Don't give generic "healthy eating" advice. 
+- Reference their specific calorie/protein targets
+- Explain how each dish fits or exceeds their ${mealType} allocation
+- For ${goal} goal, prioritize ${goal === 'fat_loss' ? 'lower calorie, high protein options' : goal === 'muscle_gain' ? 'high protein, adequate calorie options' : 'balanced options'}
 
 Respond with a JSON object in this exact format:
 {
-  "summary": "Brief summary of the menu type and cuisine",
+  "summary": "Brief summary of the menu type and what's available",
+  "yourTargets": {
+    "calorieTarget": ${calorieTarget},
+    "proteinTarget": ${proteinTarget},
+    "goal": "${goal}"
+  },
   "healthyChoices": [
     {
       "name": "Dish name",
-      "reason": "Why it's a good choice",
-      "modifications": ["Optional modification suggestions"]
+      "reason": "Why it's a good choice generally",
+      "estimatedCalories": 450,
+      "estimatedProtein": 35,
+      "howItHelpsYou": "Specific explanation of how this helps their ${goal} goal. E.g., 'This gives you ${mealAllocation.protein}g protein in just ${mealAllocation.calories} calories, keeping you on track for ${goal}'",
+      "modifications": ["Specific modifications like 'Ask for grilled instead of fried' or 'Get dressing on the side'"]
     }
   ],
   "recommendation": {
-    "name": "Best overall choice",
-    "reason": "Why this is the top pick"
+    "name": "Best overall choice for THIS USER",
+    "reason": "Why this is the top pick based on their profile",
+    "howItFitsYourPlan": "Detailed explanation of how this meal fits into their daily plan for ${goal}"
   }
 }
 
-Focus on:
-- High protein options
-- Low calorie alternatives
-- Dishes that can be easily modified
-- Balanced nutrition
-
-Keep explanations concise and practical.`;
+Include 2-4 healthy choices. Be specific with calorie/protein estimates.`;
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -69,7 +120,7 @@ Keep explanations concise and practical.`;
             content: [
               {
                 type: "text",
-                text: "Analyze this restaurant menu and identify the healthiest options. Return your response as valid JSON.",
+                text: `Analyze this restaurant menu and find the best ${mealType} options for me. Remember my goal is ${goal} and I need about ${mealAllocation.calories} calories and ${mealAllocation.protein}g protein for this meal. Return your response as valid JSON.`,
               },
               {
                 type: "image_url",
@@ -117,10 +168,16 @@ Keep explanations concise and practical.`;
       // Return a fallback structure
       analysis = {
         summary: content || "Could not analyze the menu properly.",
+        yourTargets: {
+          calorieTarget,
+          proteinTarget,
+          goal,
+        },
         healthyChoices: [],
         recommendation: {
           name: "Unable to determine",
           reason: "Please try with a clearer image of the menu.",
+          howItFitsYourPlan: "We couldn't analyze the menu clearly. Try taking another photo.",
         },
       };
     }

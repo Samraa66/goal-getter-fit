@@ -5,7 +5,7 @@ import { ActiveWorkout } from "@/components/workouts/ActiveWorkout";
 import { WorkoutComplete } from "@/components/workouts/WorkoutComplete";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Calendar, TrendingUp, Loader2, Sparkles } from "lucide-react";
+import { Calendar, TrendingUp, Loader2, Sparkles, Edit3, Lock } from "lucide-react";
 import { useWorkoutProgram } from "@/hooks/useWorkoutProgram";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -17,6 +17,7 @@ export default function Workouts() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("today");
+  const [showCustomOption, setShowCustomOption] = useState(false);
   const [activeWorkout, setActiveWorkout] = useState<{
     id: string;
     name: string;
@@ -44,8 +45,34 @@ export default function Workouts() {
   const todayWorkout = program?.workouts.find(w => w.day_of_week === today);
   const completedThisWeek = program?.workouts.filter(w => w.is_completed).length || 0;
 
+  // Check if user can start a specific workout (only today's workout is allowed)
+  const canStartWorkout = (workout: any) => {
+    // Can't start if already completed
+    if (workout.is_completed) return false;
+    
+    // Can only start today's workout
+    if (workout.day_of_week !== today) return false;
+    
+    return true;
+  };
+
+  // Check if workout is locked (future day or past incomplete)
+  const isWorkoutLocked = (workout: any) => {
+    if (workout.is_completed) return false;
+    return workout.day_of_week !== today;
+  };
+
   const handleStartWorkout = (workout: any) => {
-    // Don't start workout if no exercises
+    if (!canStartWorkout(workout)) {
+      if (workout.day_of_week !== today) {
+        toast({
+          title: "Not available yet",
+          description: "This workout is scheduled for another day. Focus on today's workout!",
+        });
+      }
+      return;
+    }
+    
     if (!workout.exercises || workout.exercises.length === 0) {
       return;
     }
@@ -65,7 +92,6 @@ export default function Workouts() {
     if (!currentExercise) return null;
 
     try {
-      // Get user profile for context
       const { data: profile } = await supabase
         .from("profiles")
         .select("experience_level, workout_location")
@@ -83,7 +109,6 @@ export default function Workouts() {
 
       if (error) throw error;
 
-      // Return the new exercise with the same ID so it replaces the old one
       const newExercise = {
         ...data,
         id: exerciseId,
@@ -112,11 +137,10 @@ export default function Workouts() {
     
     await completeWorkout(activeWorkout.id);
     
-    const workout = program?.workouts.find(w => w.id === activeWorkout.id);
     setShowComplete({
       name: activeWorkout.name,
       duration: activeWorkout.duration,
-      calories: 300, // Estimate
+      calories: 300,
       exercises: activeWorkout.exercises.length,
     });
     setActiveWorkout(null);
@@ -151,6 +175,70 @@ export default function Workouts() {
     );
   }
 
+  const EmptyState = () => (
+    <div className="flex flex-col items-center justify-center py-12 text-center">
+      <Sparkles className="h-12 w-12 text-muted-foreground mb-4" />
+      <p className="text-muted-foreground mb-2">No workout program yet</p>
+      <p className="text-xs text-muted-foreground mb-6 max-w-xs">
+        Generate an AI-powered program tailored to your goals, or follow your own routine
+      </p>
+      
+      {!showCustomOption ? (
+        <div className="flex flex-col gap-3 w-full max-w-xs">
+          <Button 
+            className="gradient-primary w-full" 
+            onClick={generateProgram}
+            disabled={isGenerating}
+          >
+            {isGenerating ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Generating...
+              </>
+            ) : (
+              <>
+                <Sparkles className="mr-2 h-4 w-4" />
+                Generate AI Program
+              </>
+            )}
+          </Button>
+          <Button 
+            variant="outline" 
+            className="w-full"
+            onClick={() => setShowCustomOption(true)}
+          >
+            <Edit3 className="mr-2 h-4 w-4" />
+            I Have My Own Program
+          </Button>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-3 w-full max-w-xs">
+          <p className="text-sm text-muted-foreground mb-2">
+            Custom workout logging coming soon! For now, generate a program and modify exercises as needed.
+          </p>
+          <Button 
+            className="gradient-primary w-full" 
+            onClick={() => {
+              setShowCustomOption(false);
+              generateProgram();
+            }}
+            disabled={isGenerating}
+          >
+            <Sparkles className="mr-2 h-4 w-4" />
+            Generate Program Instead
+          </Button>
+          <Button 
+            variant="ghost" 
+            size="sm"
+            onClick={() => setShowCustomOption(false)}
+          >
+            Go Back
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <AppLayout>
       <div className="dark min-h-screen bg-background">
@@ -165,12 +253,12 @@ export default function Workouts() {
           <div className="mx-6 mb-4 rounded-xl bg-card border border-border p-4">
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm text-muted-foreground">Weekly Progress</span>
-              <span className="text-sm font-medium text-primary">{completedThisWeek}/7 workouts</span>
+              <span className="text-sm font-medium text-primary">{completedThisWeek}/{program.workouts.length} workouts</span>
             </div>
             <div className="h-2 rounded-full bg-secondary">
               <div
                 className="h-2 rounded-full bg-primary transition-all duration-500"
-                style={{ width: `${(completedThisWeek / 7) * 100}%` }}
+                style={{ width: `${(completedThisWeek / Math.max(program.workouts.length, 1)) * 100}%` }}
               />
             </div>
           </div>
@@ -232,27 +320,7 @@ export default function Workouts() {
                 <p className="text-muted-foreground mb-4">Rest day! No workout scheduled for today.</p>
               </div>
             ) : (
-              <div className="flex flex-col items-center justify-center py-12 text-center">
-                <Sparkles className="h-12 w-12 text-muted-foreground mb-4" />
-                <p className="text-muted-foreground mb-4">No workout program yet</p>
-                <Button 
-                  className="gradient-primary" 
-                  onClick={generateProgram}
-                  disabled={isGenerating}
-                >
-                  {isGenerating ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Generating...
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles className="mr-2 h-4 w-4" />
-                      Generate Workout Program
-                    </>
-                  )}
-                </Button>
-              </div>
+              <EmptyState />
             )}
           </TabsContent>
 
@@ -262,51 +330,51 @@ export default function Workouts() {
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
               </div>
             ) : program?.workouts && program.workouts.length > 0 ? (
-              program.workouts
-                .slice()
-                .sort((a, b) => a.day_of_week - b.day_of_week)
-                .map((workout) => (
-                  <div key={workout.id} className="flex items-center gap-3">
-                    <div className="w-10 text-center">
-                      <span className="text-xs font-medium text-muted-foreground">
-                        {dayNames[workout.day_of_week]}
-                      </span>
-                    </div>
-                    <div className="flex-1">
-                      <WorkoutCard
-                        name={workout.name}
-                        type={workout.workout_type}
-                        duration={workout.duration_minutes}
-                        calories={300}
-                        exercises={workout.exercises.length}
-                        completed={workout.is_completed}
-                        onStart={workout.is_completed ? undefined : () => handleStartWorkout(workout)}
-                      />
-                    </div>
-                  </div>
-                ))
+              <>
+                {program.workouts
+                  .slice()
+                  .sort((a, b) => a.day_of_week - b.day_of_week)
+                  .map((workout) => {
+                    const locked = isWorkoutLocked(workout);
+                    const isToday = workout.day_of_week === today;
+                    
+                    return (
+                      <div key={workout.id} className="flex items-center gap-3">
+                        <div className={`w-10 text-center ${isToday ? 'text-primary font-bold' : ''}`}>
+                          <span className="text-xs font-medium">
+                            {dayNames[workout.day_of_week]}
+                          </span>
+                          {isToday && (
+                            <div className="w-1.5 h-1.5 rounded-full bg-primary mx-auto mt-1" />
+                          )}
+                        </div>
+                        <div className="flex-1 relative">
+                          <WorkoutCard
+                            name={workout.name}
+                            type={workout.workout_type}
+                            duration={workout.duration_minutes}
+                            calories={300}
+                            exercises={workout.exercises.length}
+                            completed={workout.is_completed}
+                            onStart={canStartWorkout(workout) ? () => handleStartWorkout(workout) : undefined}
+                          />
+                          {locked && (
+                            <div className="absolute inset-0 bg-background/60 backdrop-blur-[1px] rounded-xl flex items-center justify-center">
+                              <div className="flex items-center gap-2 text-muted-foreground">
+                                <Lock className="h-4 w-4" />
+                                <span className="text-sm">
+                                  {workout.day_of_week < today ? "Missed" : "Upcoming"}
+                                </span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+              </>
             ) : (
-              <div className="flex flex-col items-center justify-center py-12 text-center">
-                <Sparkles className="h-12 w-12 text-muted-foreground mb-4" />
-                <p className="text-muted-foreground mb-4">No workout program yet</p>
-                <Button 
-                  className="gradient-primary" 
-                  onClick={generateProgram}
-                  disabled={isGenerating}
-                >
-                  {isGenerating ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Generating...
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles className="mr-2 h-4 w-4" />
-                      Generate Workout Program
-                    </>
-                  )}
-                </Button>
-              </div>
+              <EmptyState />
             )}
           </TabsContent>
 

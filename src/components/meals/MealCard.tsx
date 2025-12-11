@@ -1,5 +1,7 @@
-import { Clock, Flame, RefreshCw } from "lucide-react";
+import { useState } from "react";
+import { Clock, Flame, RefreshCw, ChevronDown, ChevronUp, ChefHat } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
 interface MealCardProps {
   type: "breakfast" | "lunch" | "dinner" | "snack";
@@ -10,6 +12,8 @@ interface MealCardProps {
   fats: number;
   time?: string;
   imageUrl?: string;
+  recipe?: string;
+  description?: string;
   onSwap?: () => void;
 }
 
@@ -36,8 +40,12 @@ export function MealCard({
   fats,
   time,
   imageUrl,
+  recipe,
+  description,
   onSwap,
 }: MealCardProps) {
+  const [showRecipe, setShowRecipe] = useState(false);
+
   return (
     <div className="overflow-hidden rounded-xl border border-border bg-card animate-fade-in">
       <div className={`bg-gradient-to-r ${mealTypeColors[type]} p-4`}>
@@ -63,6 +71,9 @@ export function MealCard({
           )}
           <div className="flex-1">
             <h3 className="font-semibold text-foreground">{name}</h3>
+            {description && (
+              <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{description}</p>
+            )}
             <div className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
               <Flame className="h-4 w-4 text-primary" />
               <span>{calories} kcal</span>
@@ -84,6 +95,34 @@ export function MealCard({
             <p className="text-sm font-medium text-foreground">{fats}g</p>
           </div>
         </div>
+
+        {/* Expandable Recipe Section */}
+        {recipe && (
+          <Collapsible open={showRecipe} onOpenChange={setShowRecipe} className="mt-4">
+            <CollapsibleTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full justify-between text-muted-foreground hover:text-foreground"
+              >
+                <div className="flex items-center gap-2">
+                  <ChefHat className="h-4 w-4" />
+                  <span>How to make it</span>
+                </div>
+                {showRecipe ? (
+                  <ChevronUp className="h-4 w-4" />
+                ) : (
+                  <ChevronDown className="h-4 w-4" />
+                )}
+              </Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent className="mt-2">
+              <div className="rounded-lg bg-secondary/30 p-3 text-sm text-muted-foreground whitespace-pre-wrap">
+                {recipe}
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
+        )}
         
         {onSwap && (
           <Button
