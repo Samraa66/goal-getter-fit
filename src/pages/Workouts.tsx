@@ -241,7 +241,7 @@ export default function Workouts() {
 
   return (
     <AppLayout>
-      <div className="dark min-h-screen bg-background">
+      <div className="dark bg-background pb-6">
         {/* Header */}
         <div className="px-6 pt-12 pb-4">
           <h1 className="text-2xl font-bold text-foreground">Workouts</h1>
