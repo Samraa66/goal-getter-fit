@@ -7,20 +7,42 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ShoppingCart, Calendar, Plus, Loader2, Sparkles, Edit3 } from "lucide-react";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { ShoppingCart, Calendar, Plus, Loader2, Sparkles, Edit3, Check } from "lucide-react";
 import { useMealPlan } from "@/hooks/useMealPlan";
-import { addDays } from "date-fns";
+import { useWeeklyMealPlans } from "@/hooks/useWeeklyMealPlans";
+import { addDays, format } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 
 const mealTypeOrder = ["breakfast", "lunch", "snack", "dinner"];
 
+interface GroceryItem {
+  name: string;
+  quantity: string;
+  estimatedPrice?: number;
+}
+
+interface GroceryCategory {
+  name: string;
+  items: GroceryItem[];
+}
+
+interface GroceryList {
+  categories: GroceryCategory[];
+  totalEstimatedCost: number;
+  shoppingTips: string[];
+}
+
 export default function Meals() {
   const [activeTab, setActiveTab] = useState("today");
   const [showCustomOption, setShowCustomOption] = useState(false);
   const [addMealOpen, setAddMealOpen] = useState(false);
+  const [groceryOpen, setGroceryOpen] = useState(false);
   const [isAddingMeal, setIsAddingMeal] = useState(false);
+  const [isGeneratingGrocery, setIsGeneratingGrocery] = useState(false);
+  const [groceryList, setGroceryList] = useState<GroceryList | null>(null);
   const [customMeal, setCustomMeal] = useState({
     name: "",
     meal_type: "breakfast",
@@ -40,6 +62,8 @@ export default function Meals() {
     isGenerating: isGeneratingTomorrow, 
     generateMealPlan: generateTomorrowPlan 
   } = useMealPlan(tomorrow);
+  
+  const { weekPlans, allMeals, isLoading: isLoadingWeek } = useWeeklyMealPlans();
 
   const sortedMeals = mealPlan?.meals.slice().sort(
     (a, b) => mealTypeOrder.indexOf(a.meal_type) - mealTypeOrder.indexOf(b.meal_type)
@@ -54,7 +78,6 @@ export default function Meals() {
     
     setIsAddingMeal(true);
     try {
-      // First, ensure we have a meal plan for today
       let planId = mealPlan?.id;
       
       if (!planId) {
@@ -75,7 +98,6 @@ export default function Meals() {
         planId = newPlan.id;
       }
       
-      // Add the meal
       const { error: mealError } = await supabase.from("meals").insert({
         meal_plan_id: planId,
         name: customMeal.name,
@@ -98,6 +120,36 @@ export default function Meals() {
       toast.error("Failed to add meal");
     } finally {
       setIsAddingMeal(false);
+    }
+  };
+
+  const handleGenerateGroceryList = async () => {
+    if (allMeals.length === 0) {
+      toast.error("Generate meal plans first to create a grocery list");
+      return;
+    }
+
+    setIsGeneratingGrocery(true);
+    try {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("daily_food_budget, dietary_preference, allergies")
+        .eq("id", user?.id)
+        .single();
+
+      const response = await supabase.functions.invoke("generate-grocery-list", {
+        body: { meals: allMeals, profile },
+      });
+
+      if (response.error) throw new Error(response.error.message);
+
+      setGroceryList(response.data);
+      setGroceryOpen(true);
+    } catch (error) {
+      console.error("Error generating grocery list:", error);
+      toast.error("Failed to generate grocery list");
+    } finally {
+      setIsGeneratingGrocery(false);
     }
   };
 
@@ -190,6 +242,56 @@ export default function Meals() {
     </Dialog>
   );
 
+  const GroceryListDialog = () => (
+    <Dialog open={groceryOpen} onOpenChange={setGroceryOpen}>
+      <DialogContent className="max-w-md max-h-[80vh]">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <ShoppingCart className="h-5 w-5" />
+            Weekly Grocery List
+          </DialogTitle>
+        </DialogHeader>
+        {groceryList && (
+          <ScrollArea className="h-[60vh] pr-4">
+            <div className="space-y-4">
+              {groceryList.categories.map((category, idx) => (
+                <div key={idx} className="space-y-2">
+                  <h3 className="font-semibold text-primary">{category.name}</h3>
+                  <div className="space-y-1">
+                    {category.items.map((item, itemIdx) => (
+                      <div key={itemIdx} className="flex items-center justify-between text-sm py-1 border-b border-border/50">
+                        <span>{item.name}</span>
+                        <span className="text-muted-foreground">{item.quantity}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              
+              <div className="pt-4 border-t border-border">
+                <div className="flex justify-between font-semibold">
+                  <span>Estimated Total</span>
+                  <span className="text-primary">${groceryList.totalEstimatedCost}</span>
+                </div>
+              </div>
+
+              {groceryList.shoppingTips && groceryList.shoppingTips.length > 0 && (
+                <div className="pt-4">
+                  <h4 className="font-semibold mb-2 text-sm">Shopping Tips</h4>
+                  <ul className="text-xs text-muted-foreground space-y-1">
+                    {groceryList.shoppingTips.map((tip, idx) => (
+                      <li key={idx}>• {tip}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          </ScrollArea>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+
   const EmptyState = ({ onGenerate, isGeneratingPlan, showOptions = true }: { 
     onGenerate: () => void; 
     isGeneratingPlan: boolean;
@@ -270,15 +372,30 @@ export default function Meals() {
 
         {/* Action Buttons */}
         <div className="flex gap-3 px-6 mb-6">
-          <Button variant="outline" className="flex-1">
-            <ShoppingCart className="mr-2 h-4 w-4" />
+          <Button 
+            variant="outline" 
+            className="flex-1"
+            onClick={handleGenerateGroceryList}
+            disabled={isGeneratingGrocery}
+          >
+            {isGeneratingGrocery ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <ShoppingCart className="mr-2 h-4 w-4" />
+            )}
             Grocery List
           </Button>
-          <Button variant="outline" className="flex-1">
+          <Button 
+            variant="outline" 
+            className="flex-1"
+            onClick={() => setActiveTab("week")}
+          >
             <Calendar className="mr-2 h-4 w-4" />
             Week View
           </Button>
         </div>
+
+        <GroceryListDialog />
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="px-6">
@@ -362,12 +479,60 @@ export default function Meals() {
             )}
           </TabsContent>
 
-          <TabsContent value="week" className="mt-4">
-            <div className="flex flex-col items-center justify-center py-12 text-center">
-              <Calendar className="h-12 w-12 text-muted-foreground mb-4" />
-              <p className="text-muted-foreground">View your weekly meal overview</p>
-              <Button className="mt-4 gradient-primary">Generate Week Plan</Button>
-            </div>
+          <TabsContent value="week" className="mt-4 space-y-3">
+            {isLoadingWeek ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            ) : weekPlans.length > 0 ? (
+              <>
+                {weekPlans.map((day) => {
+                  const isToday = day.date === format(today, "yyyy-MM-dd");
+                  return (
+                    <div 
+                      key={day.date}
+                      className={`rounded-xl border p-4 ${isToday ? 'border-primary bg-primary/5' : 'border-border bg-card'}`}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className={`font-semibold ${isToday ? 'text-primary' : 'text-foreground'}`}>
+                            {day.dayName}
+                          </span>
+                          {isToday && (
+                            <span className="text-xs bg-primary text-primary-foreground px-2 py-0.5 rounded-full">
+                              Today
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-sm text-muted-foreground">
+                          {day.totalCalories} kcal
+                        </span>
+                      </div>
+                      {day.meals.length > 0 ? (
+                        <div className="space-y-1">
+                          {day.meals.map((meal) => (
+                            <div key={meal.id} className="flex items-center justify-between text-sm">
+                              <span className="text-muted-foreground capitalize">{meal.meal_type}</span>
+                              <span className="text-foreground truncate ml-2 flex-1 text-right">{meal.name}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">No meals planned</p>
+                      )}
+                    </div>
+                  );
+                })}
+              </>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <Calendar className="h-12 w-12 text-muted-foreground mb-4" />
+                <p className="text-muted-foreground">No meal plans for this week</p>
+                <Button className="mt-4 gradient-primary" onClick={generateMealPlan}>
+                  Start Planning
+                </Button>
+              </div>
+            )}
           </TabsContent>
         </Tabs>
       </div>
