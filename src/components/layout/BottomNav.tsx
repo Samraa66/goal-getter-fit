@@ -1,4 +1,4 @@
-import { Home, Utensils, Dumbbell, Camera, MessageCircle, User } from "lucide-react";
+import { Home, Utensils, Dumbbell, Camera, MessageCircle, Users } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
 
@@ -8,6 +8,7 @@ const navItems = [
   { icon: Dumbbell, label: "Workouts", path: "/workouts" },
   { icon: Camera, label: "Scan", path: "/scanner" },
   { icon: MessageCircle, label: "Coach", path: "/coach" },
+  { icon: Users, label: "Community", path: "/community" },
 ];
 
 export function BottomNav() {

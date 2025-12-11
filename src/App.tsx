@@ -13,6 +13,7 @@ import Coach from "./pages/Coach";
 import Profile from "./pages/Profile";
 import Onboarding from "./pages/Onboarding";
 import Auth from "./pages/Auth";
+import Community from "./pages/Community";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -59,6 +60,11 @@ const App = () => (
             <Route path="/profile" element={
               <ProtectedRoute>
                 <Profile />
+              </ProtectedRoute>
+            } />
+            <Route path="/community" element={
+              <ProtectedRoute>
+                <Community />
               </ProtectedRoute>
             } />
             <Route path="*" element={<NotFound />} />

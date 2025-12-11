@@ -1,30 +1,66 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
-import { Camera, Upload, X, Loader2, Utensils, AlertCircle } from "lucide-react";
+import { Camera, Upload, X, Loader2, Utensils, AlertCircle, Target } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
 
 interface MenuAnalysis {
   summary: string;
+  yourTargets: {
+    calorieTarget: number;
+    proteinTarget: number;
+    goal: string;
+  };
   healthyChoices: Array<{
     name: string;
     reason: string;
+    estimatedCalories?: number;
+    estimatedProtein?: number;
+    howItHelpsYou: string;
     modifications?: string[];
   }>;
   recommendation: {
     name: string;
     reason: string;
+    howItFitsYourPlan: string;
   };
 }
 
+type MealType = "breakfast" | "lunch" | "dinner" | "snack";
+
+const mealTypeLabels: Record<MealType, string> = {
+  breakfast: "Breakfast",
+  lunch: "Lunch", 
+  dinner: "Dinner",
+  snack: "Snack",
+};
+
 export default function Scanner() {
   const [image, setImage] = useState<string | null>(null);
+  const [selectedMealType, setSelectedMealType] = useState<MealType | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysis, setAnalysis] = useState<MenuAnalysis | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [userProfile, setUserProfile] = useState<any>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
+  const { user } = useAuth();
+
+  // Fetch user profile for personalization
+  useEffect(() => {
+    const fetchProfile = async () => {
+      if (!user) return;
+      const { data } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", user.id)
+        .single();
+      if (data) setUserProfile(data);
+    };
+    fetchProfile();
+  }, [user]);
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -40,14 +76,25 @@ export default function Scanner() {
   };
 
   const analyzeMenu = async () => {
-    if (!image) return;
+    if (!image || !selectedMealType) {
+      toast({
+        title: "Select meal type",
+        description: "Please select which meal this is for",
+        variant: "destructive",
+      });
+      return;
+    }
 
     setIsAnalyzing(true);
     setError(null);
 
     try {
       const { data, error: fnError } = await supabase.functions.invoke("analyze-menu", {
-        body: { image },
+        body: { 
+          image,
+          mealType: selectedMealType,
+          profile: userProfile,
+        },
       });
 
       if (fnError) throw fnError;
@@ -55,7 +102,7 @@ export default function Scanner() {
       setAnalysis(data);
       toast({
         title: "Menu analyzed!",
-        description: "Here are your healthy options.",
+        description: `Found options for your ${mealTypeLabels[selectedMealType].toLowerCase()}.`,
       });
     } catch (err) {
       console.error("Error analyzing menu:", err);
@@ -74,6 +121,7 @@ export default function Scanner() {
     setImage(null);
     setAnalysis(null);
     setError(null);
+    setSelectedMealType(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -85,7 +133,7 @@ export default function Scanner() {
         {/* Header */}
         <div className="px-6 pt-12 pb-4">
           <h1 className="text-2xl font-bold text-foreground">Menu Scanner</h1>
-          <p className="text-muted-foreground">Scan restaurant menus for healthy options</p>
+          <p className="text-muted-foreground">Find options that fit your goals</p>
         </div>
 
         <div className="px-6 py-4">
@@ -140,7 +188,7 @@ export default function Scanner() {
                 <img
                   src={image}
                   alt="Menu"
-                  className="w-full rounded-xl object-cover max-h-[300px]"
+                  className="w-full rounded-xl object-cover max-h-[250px]"
                 />
                 <Button
                   variant="secondary"
@@ -152,20 +200,39 @@ export default function Scanner() {
                 </Button>
               </div>
 
+              {/* Meal Type Selection */}
               {!analysis && !isAnalyzing && (
-                <Button
-                  className="w-full gradient-primary"
-                  onClick={analyzeMenu}
-                >
-                  <Utensils className="mr-2 h-4 w-4" />
-                  Analyze Menu
-                </Button>
+                <div className="space-y-3">
+                  <p className="text-sm font-medium text-foreground">What meal is this for?</p>
+                  <div className="grid grid-cols-4 gap-2">
+                    {(Object.keys(mealTypeLabels) as MealType[]).map((type) => (
+                      <Button
+                        key={type}
+                        variant={selectedMealType === type ? "default" : "outline"}
+                        size="sm"
+                        className={selectedMealType === type ? "gradient-primary" : ""}
+                        onClick={() => setSelectedMealType(type)}
+                      >
+                        {mealTypeLabels[type]}
+                      </Button>
+                    ))}
+                  </div>
+
+                  <Button
+                    className="w-full gradient-primary mt-4"
+                    onClick={analyzeMenu}
+                    disabled={!selectedMealType}
+                  >
+                    <Utensils className="mr-2 h-4 w-4" />
+                    Analyze for {selectedMealType ? mealTypeLabels[selectedMealType] : "..."}
+                  </Button>
+                </div>
               )}
 
               {isAnalyzing && (
                 <div className="flex flex-col items-center py-8">
                   <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                  <p className="mt-4 text-muted-foreground">Analyzing menu...</p>
+                  <p className="mt-4 text-muted-foreground">Finding options for your {selectedMealType}...</p>
                 </div>
               )}
 
@@ -178,6 +245,30 @@ export default function Scanner() {
 
               {analysis && (
                 <div className="space-y-4 animate-fade-in">
+                  {/* Your Targets */}
+                  {analysis.yourTargets && (
+                    <div className="rounded-xl bg-secondary/30 border border-border p-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Target className="h-4 w-4 text-primary" />
+                        <h3 className="font-semibold text-foreground text-sm">Your Targets</h3>
+                      </div>
+                      <div className="flex gap-4 text-sm">
+                        <div>
+                          <span className="text-muted-foreground">Goal:</span>{" "}
+                          <span className="text-foreground capitalize">{analysis.yourTargets.goal}</span>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Daily:</span>{" "}
+                          <span className="text-foreground">{analysis.yourTargets.calorieTarget} kcal</span>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Protein:</span>{" "}
+                          <span className="text-primary">{analysis.yourTargets.proteinTarget}g</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Summary */}
                   <div className="rounded-xl bg-card border border-border p-4">
                     <h3 className="font-semibold text-foreground mb-2">Menu Summary</h3>
@@ -186,24 +277,45 @@ export default function Scanner() {
 
                   {/* Recommendation */}
                   <div className="rounded-xl bg-primary/10 border border-primary/30 p-4">
-                    <h3 className="font-semibold text-primary mb-2">🎯 Top Pick</h3>
+                    <h3 className="font-semibold text-primary mb-2">🎯 Best Pick for You</h3>
                     <p className="font-medium text-foreground">{analysis.recommendation.name}</p>
                     <p className="text-sm text-muted-foreground mt-1">{analysis.recommendation.reason}</p>
+                    {analysis.recommendation.howItFitsYourPlan && (
+                      <div className="mt-2 pt-2 border-t border-primary/20">
+                        <p className="text-xs text-primary font-medium">How this fits your plan:</p>
+                        <p className="text-sm text-muted-foreground">{analysis.recommendation.howItFitsYourPlan}</p>
+                      </div>
+                    )}
                   </div>
 
                   {/* Healthy Choices */}
                   <div className="space-y-3">
-                    <h3 className="font-semibold text-foreground">Healthy Options</h3>
+                    <h3 className="font-semibold text-foreground">Other Good Options</h3>
                     {analysis.healthyChoices.map((choice, index) => (
                       <div
                         key={index}
                         className="rounded-xl bg-card border border-border p-4"
                       >
-                        <p className="font-medium text-foreground">{choice.name}</p>
+                        <div className="flex items-start justify-between">
+                          <p className="font-medium text-foreground">{choice.name}</p>
+                          {choice.estimatedCalories && (
+                            <span className="text-xs bg-secondary px-2 py-1 rounded-full text-muted-foreground">
+                              ~{choice.estimatedCalories} kcal
+                            </span>
+                          )}
+                        </div>
                         <p className="text-sm text-muted-foreground mt-1">{choice.reason}</p>
+                        
+                        {choice.howItHelpsYou && (
+                          <div className="mt-2 bg-primary/5 rounded-lg p-2">
+                            <p className="text-xs text-primary font-medium">How it helps you:</p>
+                            <p className="text-xs text-muted-foreground">{choice.howItHelpsYou}</p>
+                          </div>
+                        )}
+                        
                         {choice.modifications && choice.modifications.length > 0 && (
                           <div className="mt-2">
-                            <p className="text-xs text-primary font-medium">Suggested modifications:</p>
+                            <p className="text-xs text-primary font-medium">Make it even better:</p>
                             <ul className="text-xs text-muted-foreground mt-1 space-y-0.5">
                               {choice.modifications.map((mod, i) => (
                                 <li key={i}>• {mod}</li>
