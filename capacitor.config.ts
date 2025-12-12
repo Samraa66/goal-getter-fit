@@ -1,7 +1,7 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'app.lovable.5466aae9837c42d19b7915884f19fd78',
+  appId: 'com.goalgetter.fit',
   appName: 'FitCoach AI',
   webDir: 'dist',
   server: {
