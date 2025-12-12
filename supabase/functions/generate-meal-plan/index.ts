@@ -51,12 +51,10 @@ CRITICAL BUDGET RULES:
 4. Include estimated cost per meal in output
 5. If target macros cannot be perfectly achieved within budget, get as close as possible and note any compromises` : '';
 
-    const systemPrompt = `You are an elite sports nutritionist and registered dietitian. Generate a precisely calculated, personalized daily meal plan.
+    const systemPrompt = `You are an elite sports nutritionist. Generate a precisely calculated, personalized daily meal plan.
 
-====== USER PROFILE ======
-- Age: ${age} years
-- Height: ${height} cm
-- Current Weight: ${weight} kg
+USER PROFILE:
+- Age: ${age} years, Height: ${height} cm, Weight: ${weight} kg
 - Goal Weight: ${profile.weight_goal || weight} kg
 - Fitness Goal: ${profile.fitness_goal || 'general_health'}
 - Dietary Preference: ${profile.dietary_preference || 'omnivore'}
@@ -64,60 +62,16 @@ CRITICAL BUDGET RULES:
 - Disliked Foods: ${(profile.disliked_foods || []).join(', ') || 'none'}
 ${budgetTierInfo}
 
-====== NUTRITIONAL TARGETS (MUST FOLLOW PRECISELY) ======
-- Daily Calories: ${calorieTarget} kcal (±5% tolerance: ${Math.round(calorieTarget * 0.95)}-${Math.round(calorieTarget * 1.05)})
-- Protein: ${proteinTarget}g (${proteinPerKg}g/kg for ${profile.fitness_goal || 'maintenance'})
-- Fat: ${fatTarget}g (25% of calories)
-- Carbs: ${carbTarget}g (remaining calories)
+NUTRITIONAL TARGETS:
+- Daily Calories: ${calorieTarget} kcal
+- Protein: ${proteinTarget}g
+- Fat: ${fatTarget}g
+- Carbs: ${carbTarget}g
 
-====== MEAL STRUCTURE ======
-Generate exactly 4 meals with this calorie distribution:
-- Breakfast: ~25% of daily calories (~${Math.round(calorieTarget * 0.25)} kcal)
-- Lunch: ~30% of daily calories (~${Math.round(calorieTarget * 0.30)} kcal)
-- Snack: ~15% of daily calories (~${Math.round(calorieTarget * 0.15)} kcal)
-- Dinner: ~30% of daily calories (~${Math.round(calorieTarget * 0.30)} kcal)
+Generate exactly 4 meals (breakfast, lunch, snack, dinner).
 
-====== REQUIREMENTS ======
-1. Each meal must include exact gram measurements for all ingredients
-2. Provide step-by-step cooking instructions (simple, realistic, under 20 minutes prep)
-3. Prioritize whole foods, lean proteins, complex carbs, healthy fats
-4. Ensure protein is distributed across all meals (25-40g per main meal)
-5. Include a variety of vegetables and micronutrient-dense foods
-6. Make meals practical and easy to prepare
-7. NEVER include any foods the user is allergic to or dislikes
-8. Respect dietary preferences strictly (vegetarian, vegan, etc.)
-
-====== OUTPUT FORMAT (STRICT JSON, NO MARKDOWN) ======
-{
-  "meals": [
-    {
-      "meal_type": "breakfast",
-      "name": "Meal Name",
-      "description": "Brief appetizing description",
-      "ingredients": [
-        {"name": "Ingredient", "grams": 100, "estimated_cost": 0.50}
-      ],
-      "calories": 500,
-      "protein": 35,
-      "carbs": 45,
-      "fats": 18,
-      "recipe": "Step 1: ... Step 2: ... Step 3: ...",
-      "prep_time_minutes": 15,
-      "estimated_cost": 2.50
-    }
-  ],
-  "total_calories": ${calorieTarget},
-  "total_protein": ${proteinTarget},
-  "total_carbs": ${carbTarget},
-  "total_fats": ${fatTarget},
-  "total_cost": 0.00,
-  "grocery_list": [
-    {"name": "Ingredient", "grams": 100, "estimated_cost": 0.50}
-  ],
-  "budget_notes": "Any notes about budget constraints or substitutions made"
-}
-
-CRITICAL: Output ONLY valid JSON. No markdown, no explanations, no code blocks.`;
+RESPOND WITH ONLY THIS JSON STRUCTURE (no markdown, no extra text):
+{"meals":[{"meal_type":"breakfast","name":"string","description":"string","calories":number,"protein":number,"carbs":number,"fats":number,"recipe":"string"},{"meal_type":"lunch","name":"string","description":"string","calories":number,"protein":number,"carbs":number,"fats":number,"recipe":"string"},{"meal_type":"snack","name":"string","description":"string","calories":number,"protein":number,"carbs":number,"fats":number,"recipe":"string"},{"meal_type":"dinner","name":"string","description":"string","calories":number,"protein":number,"carbs":number,"fats":number,"recipe":"string"}],"total_calories":${calorieTarget},"total_protein":${proteinTarget},"total_carbs":${carbTarget},"total_fats":${fatTarget}}`;
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -129,7 +83,7 @@ CRITICAL: Output ONLY valid JSON. No markdown, no explanations, no code blocks.`
         model: "google/gemini-2.5-flash",
         messages: [
           { role: "system", content: systemPrompt },
-          { role: "user", content: `Generate a complete meal plan for ${date}. Output ONLY valid JSON.` },
+          { role: "user", content: `Generate meal plan for ${date}. Return ONLY valid JSON, no markdown.` },
         ],
       }),
     });
@@ -156,12 +110,20 @@ CRITICAL: Output ONLY valid JSON. No markdown, no explanations, no code blocks.`
     const data = await response.json();
     const content = data.choices?.[0]?.message?.content;
     
-    console.log("AI Response:", content);
+    console.log("AI Raw Response length:", content?.length);
+    console.log("AI Response preview:", content?.substring(0, 500));
 
-    // Parse the JSON response
+    if (!content) {
+      console.error("No content in AI response");
+      throw new Error("No response from AI");
+    }
+
+    // Parse the JSON response with robust cleaning
     let mealPlan;
     try {
       let cleanContent = content.trim();
+      
+      // Remove markdown code blocks
       if (cleanContent.startsWith("```json")) {
         cleanContent = cleanContent.slice(7);
       } else if (cleanContent.startsWith("```")) {
@@ -170,10 +132,27 @@ CRITICAL: Output ONLY valid JSON. No markdown, no explanations, no code blocks.`
       if (cleanContent.endsWith("```")) {
         cleanContent = cleanContent.slice(0, -3);
       }
-      mealPlan = JSON.parse(cleanContent.trim());
+      cleanContent = cleanContent.trim();
+      
+      // Try to find JSON object in the response
+      const jsonStart = cleanContent.indexOf('{');
+      const jsonEnd = cleanContent.lastIndexOf('}');
+      
+      if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
+        cleanContent = cleanContent.substring(jsonStart, jsonEnd + 1);
+      }
+      
+      mealPlan = JSON.parse(cleanContent);
+      
+      // Validate the structure
+      if (!mealPlan.meals || !Array.isArray(mealPlan.meals)) {
+        throw new Error("Invalid meal plan structure - missing meals array");
+      }
+      
     } catch (parseError) {
       console.error("Failed to parse AI response:", parseError);
-      throw new Error("Failed to generate valid meal plan");
+      console.error("Content that failed to parse:", content?.substring(0, 1000));
+      throw new Error("Failed to generate valid meal plan - AI returned invalid format");
     }
 
     console.log("Generate Meal Plan: Success, returning", mealPlan.meals?.length, "meals");
