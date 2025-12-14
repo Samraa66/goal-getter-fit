@@ -14,6 +14,50 @@ export type Database = {
   }
   public: {
     Tables: {
+      adjustment_history: {
+        Row: {
+          adjustment_type: string
+          after_state: Json | null
+          before_state: Json | null
+          created_at: string | null
+          id: string
+          plan_version_id: string | null
+          rule_applied: string
+          triggered_by: string | null
+          user_id: string
+        }
+        Insert: {
+          adjustment_type: string
+          after_state?: Json | null
+          before_state?: Json | null
+          created_at?: string | null
+          id?: string
+          plan_version_id?: string | null
+          rule_applied: string
+          triggered_by?: string | null
+          user_id: string
+        }
+        Update: {
+          adjustment_type?: string
+          after_state?: Json | null
+          before_state?: Json | null
+          created_at?: string | null
+          id?: string
+          plan_version_id?: string | null
+          rule_applied?: string
+          triggered_by?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "adjustment_history_plan_version_id_fkey"
+            columns: ["plan_version_id"]
+            isOneToOne: false
+            referencedRelation: "plan_versions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       chat_messages: {
         Row: {
           content: string
@@ -42,6 +86,123 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      deviation_events: {
+        Row: {
+          auto_adjusted: boolean | null
+          created_at: string | null
+          deviation_type: Database["public"]["Enums"]["deviation_type"]
+          id: string
+          impact_budget: number | null
+          impact_calories: number | null
+          impact_protein: number | null
+          notes: string | null
+          reason: Database["public"]["Enums"]["deviation_reason"]
+          related_meal_id: string | null
+          related_workout_id: string | null
+          user_id: string
+        }
+        Insert: {
+          auto_adjusted?: boolean | null
+          created_at?: string | null
+          deviation_type: Database["public"]["Enums"]["deviation_type"]
+          id?: string
+          impact_budget?: number | null
+          impact_calories?: number | null
+          impact_protein?: number | null
+          notes?: string | null
+          reason: Database["public"]["Enums"]["deviation_reason"]
+          related_meal_id?: string | null
+          related_workout_id?: string | null
+          user_id: string
+        }
+        Update: {
+          auto_adjusted?: boolean | null
+          created_at?: string | null
+          deviation_type?: Database["public"]["Enums"]["deviation_type"]
+          id?: string
+          impact_budget?: number | null
+          impact_calories?: number | null
+          impact_protein?: number | null
+          notes?: string | null
+          reason?: Database["public"]["Enums"]["deviation_reason"]
+          related_meal_id?: string | null
+          related_workout_id?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "deviation_events_related_meal_id_fkey"
+            columns: ["related_meal_id"]
+            isOneToOne: false
+            referencedRelation: "meals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deviation_events_related_workout_id_fkey"
+            columns: ["related_workout_id"]
+            isOneToOne: false
+            referencedRelation: "workouts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dining_out_events: {
+        Row: {
+          compensation_applied: boolean | null
+          compensation_details: Json | null
+          created_at: string | null
+          estimated_calories: number | null
+          estimated_cost: number | null
+          estimated_protein: number | null
+          id: string
+          meal_type: string
+          replaced_meal_id: string | null
+          scanned_menu_id: string | null
+          user_id: string
+        }
+        Insert: {
+          compensation_applied?: boolean | null
+          compensation_details?: Json | null
+          created_at?: string | null
+          estimated_calories?: number | null
+          estimated_cost?: number | null
+          estimated_protein?: number | null
+          id?: string
+          meal_type: string
+          replaced_meal_id?: string | null
+          scanned_menu_id?: string | null
+          user_id: string
+        }
+        Update: {
+          compensation_applied?: boolean | null
+          compensation_details?: Json | null
+          created_at?: string | null
+          estimated_calories?: number | null
+          estimated_cost?: number | null
+          estimated_protein?: number | null
+          id?: string
+          meal_type?: string
+          replaced_meal_id?: string | null
+          scanned_menu_id?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dining_out_events_replaced_meal_id_fkey"
+            columns: ["replaced_meal_id"]
+            isOneToOne: false
+            referencedRelation: "meals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dining_out_events_scanned_menu_id_fkey"
+            columns: ["scanned_menu_id"]
+            isOneToOne: false
+            referencedRelation: "scanned_menus"
             referencedColumns: ["id"]
           },
         ]
@@ -105,8 +266,10 @@ export type Database = {
       meal_plans: {
         Row: {
           created_at: string | null
+          estimated_weekly_cost: number | null
           id: string
           plan_date: string
+          plan_version_id: string | null
           total_calories: number | null
           total_carbs: number | null
           total_fats: number | null
@@ -115,8 +278,10 @@ export type Database = {
         }
         Insert: {
           created_at?: string | null
+          estimated_weekly_cost?: number | null
           id?: string
           plan_date: string
+          plan_version_id?: string | null
           total_calories?: number | null
           total_carbs?: number | null
           total_fats?: number | null
@@ -125,8 +290,10 @@ export type Database = {
         }
         Update: {
           created_at?: string | null
+          estimated_weekly_cost?: number | null
           id?: string
           plan_date?: string
+          plan_version_id?: string | null
           total_calories?: number | null
           total_carbs?: number | null
           total_fats?: number | null
@@ -134,6 +301,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "meal_plans_plan_version_id_fkey"
+            columns: ["plan_version_id"]
+            isOneToOne: false
+            referencedRelation: "plan_versions"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "meal_plans_user_id_fkey"
             columns: ["user_id"]
@@ -198,6 +372,42 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      plan_versions: {
+        Row: {
+          adjustment_reason: string | null
+          constraints_snapshot: Json
+          created_at: string | null
+          estimated_weekly_cost: number | null
+          id: string
+          is_active: boolean | null
+          plan_type: string
+          user_id: string
+          version_number: number
+        }
+        Insert: {
+          adjustment_reason?: string | null
+          constraints_snapshot: Json
+          created_at?: string | null
+          estimated_weekly_cost?: number | null
+          id?: string
+          is_active?: boolean | null
+          plan_type: string
+          user_id: string
+          version_number?: number
+        }
+        Update: {
+          adjustment_reason?: string | null
+          constraints_snapshot?: Json
+          created_at?: string | null
+          estimated_weekly_cost?: number | null
+          id?: string
+          is_active?: boolean | null
+          plan_type?: string
+          user_id?: string
+          version_number?: number
+        }
+        Relationships: []
       }
       profiles: {
         Row: {
@@ -356,6 +566,133 @@ export type Database = {
           },
         ]
       }
+      user_constraints: {
+        Row: {
+          created_at: string | null
+          equipment_access: string[] | null
+          id: string
+          max_cooking_time_minutes: number | null
+          meals_per_day: number | null
+          preferred_workout_days: number[] | null
+          protein_target_grams: number | null
+          simplify_after_deviations: number | null
+          updated_at: string | null
+          user_id: string
+          weekly_food_budget: number | null
+          workout_duration_minutes: number | null
+          workouts_per_week: number | null
+        }
+        Insert: {
+          created_at?: string | null
+          equipment_access?: string[] | null
+          id?: string
+          max_cooking_time_minutes?: number | null
+          meals_per_day?: number | null
+          preferred_workout_days?: number[] | null
+          protein_target_grams?: number | null
+          simplify_after_deviations?: number | null
+          updated_at?: string | null
+          user_id: string
+          weekly_food_budget?: number | null
+          workout_duration_minutes?: number | null
+          workouts_per_week?: number | null
+        }
+        Update: {
+          created_at?: string | null
+          equipment_access?: string[] | null
+          id?: string
+          max_cooking_time_minutes?: number | null
+          meals_per_day?: number | null
+          preferred_workout_days?: number[] | null
+          protein_target_grams?: number | null
+          simplify_after_deviations?: number | null
+          updated_at?: string | null
+          user_id?: string
+          weekly_food_budget?: number | null
+          workout_duration_minutes?: number | null
+          workouts_per_week?: number | null
+        }
+        Relationships: []
+      }
+      user_subscriptions: {
+        Row: {
+          created_at: string | null
+          id: string
+          monthly_ai_messages_used: number | null
+          monthly_regenerations_used: number | null
+          reset_at: string | null
+          tier: Database["public"]["Enums"]["subscription_tier"]
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          monthly_ai_messages_used?: number | null
+          monthly_regenerations_used?: number | null
+          reset_at?: string | null
+          tier?: Database["public"]["Enums"]["subscription_tier"]
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          monthly_ai_messages_used?: number | null
+          monthly_regenerations_used?: number | null
+          reset_at?: string | null
+          tier?: Database["public"]["Enums"]["subscription_tier"]
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      weekly_checkins: {
+        Row: {
+          adjustment_applied: boolean | null
+          adjustment_details: Json | null
+          budget_adherence: Database["public"]["Enums"]["adherence_level"]
+          created_at: string | null
+          id: string
+          meal_adherence: Database["public"]["Enums"]["adherence_level"]
+          notes: string | null
+          primary_reason: Database["public"]["Enums"]["deviation_reason"] | null
+          user_id: string
+          week_start: string
+          workout_adherence: Database["public"]["Enums"]["adherence_level"]
+        }
+        Insert: {
+          adjustment_applied?: boolean | null
+          adjustment_details?: Json | null
+          budget_adherence: Database["public"]["Enums"]["adherence_level"]
+          created_at?: string | null
+          id?: string
+          meal_adherence: Database["public"]["Enums"]["adherence_level"]
+          notes?: string | null
+          primary_reason?:
+            | Database["public"]["Enums"]["deviation_reason"]
+            | null
+          user_id: string
+          week_start: string
+          workout_adherence: Database["public"]["Enums"]["adherence_level"]
+        }
+        Update: {
+          adjustment_applied?: boolean | null
+          adjustment_details?: Json | null
+          budget_adherence?: Database["public"]["Enums"]["adherence_level"]
+          created_at?: string | null
+          id?: string
+          meal_adherence?: Database["public"]["Enums"]["adherence_level"]
+          notes?: string | null
+          primary_reason?:
+            | Database["public"]["Enums"]["deviation_reason"]
+            | null
+          user_id?: string
+          week_start?: string
+          workout_adherence?: Database["public"]["Enums"]["adherence_level"]
+        }
+        Relationships: []
+      }
       workout_programs: {
         Row: {
           created_at: string | null
@@ -363,6 +700,7 @@ export type Database = {
           id: string
           is_active: boolean | null
           name: string
+          plan_version_id: string | null
           user_id: string
           week_number: number | null
         }
@@ -372,6 +710,7 @@ export type Database = {
           id?: string
           is_active?: boolean | null
           name: string
+          plan_version_id?: string | null
           user_id: string
           week_number?: number | null
         }
@@ -381,10 +720,18 @@ export type Database = {
           id?: string
           is_active?: boolean | null
           name?: string
+          plan_version_id?: string | null
           user_id?: string
           week_number?: number | null
         }
         Relationships: [
+          {
+            foreignKeyName: "workout_programs_plan_version_id_fkey"
+            columns: ["plan_version_id"]
+            isOneToOne: false
+            referencedRelation: "plan_versions"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "workout_programs_user_id_fkey"
             columns: ["user_id"]
@@ -443,10 +790,33 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      check_subscription_limit: {
+        Args: { p_limit_type: string; p_user_id: string }
+        Returns: Json
+      }
+      increment_usage: {
+        Args: { p_usage_type: string; p_user_id: string }
+        Returns: undefined
+      }
     }
     Enums: {
-      [_ in never]: never
+      adherence_level: "yes" | "partial" | "no"
+      deviation_reason:
+        | "time"
+        | "budget"
+        | "energy"
+        | "preference"
+        | "dining_out"
+        | "illness"
+        | "other"
+      deviation_type:
+        | "skipped_workout"
+        | "shortened_workout"
+        | "missed_meal"
+        | "substituted_meal"
+        | "dining_out"
+        | "budget_exceeded"
+      subscription_tier: "free" | "paid"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -573,6 +943,26 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      adherence_level: ["yes", "partial", "no"],
+      deviation_reason: [
+        "time",
+        "budget",
+        "energy",
+        "preference",
+        "dining_out",
+        "illness",
+        "other",
+      ],
+      deviation_type: [
+        "skipped_workout",
+        "shortened_workout",
+        "missed_meal",
+        "substituted_meal",
+        "dining_out",
+        "budget_exceeded",
+      ],
+      subscription_tier: ["free", "paid"],
+    },
   },
 } as const
