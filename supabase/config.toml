@@ -17,3 +17,18 @@ verify_jwt = false
 
 [functions.swap-exercise]
 verify_jwt = false
+
+[functions.check-limits]
+verify_jwt = true
+
+[functions.apply-adjustment]
+verify_jwt = true
+
+[functions.weekly-checkin]
+verify_jwt = true
+
+[functions.log-deviation]
+verify_jwt = true
+
+[functions.home-summary]
+verify_jwt = true
