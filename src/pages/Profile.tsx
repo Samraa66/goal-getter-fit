@@ -11,9 +11,14 @@ import {
   ChevronRight,
   Scale,
   Ruler,
-  Flame
+  Flame,
+  Loader2
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
+import { useEffect, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 
 const menuItems = [
   { icon: Target, label: "Goals & Preferences", path: "/settings/goals" },
@@ -22,17 +27,76 @@ const menuItems = [
   { icon: HelpCircle, label: "Help & Support", path: "/settings/help" },
 ];
 
+interface ProfileData {
+  full_name: string | null;
+  email: string | null;
+  fitness_goal: string | null;
+  weight_current: number | null;
+  height_cm: number | null;
+  daily_calorie_target: number | null;
+}
+
 export default function Profile() {
   const navigate = useNavigate();
+  const { user: authUser, signOut } = useAuth();
+  const { toast } = useToast();
+  const [profile, setProfile] = useState<ProfileData | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
-  // Mock user data
-  const user = {
-    name: "Alex Johnson",
-    email: "alex@example.com",
-    goal: "Lose Weight",
-    weight: 75,
-    height: 175,
-    dailyCalories: 2000,
+  useEffect(() => {
+    async function fetchProfile() {
+      if (!authUser) return;
+      
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("full_name, email, fitness_goal, weight_current, height_cm, daily_calorie_target")
+        .eq("id", authUser.id)
+        .single();
+      
+      if (!error && data) {
+        setProfile(data);
+      }
+      setIsLoading(false);
+    }
+    
+    fetchProfile();
+  }, [authUser]);
+
+  const handleLogout = async () => {
+    setIsLoggingOut(true);
+    try {
+      await signOut();
+      toast({
+        title: "Logged out",
+        description: "You've been successfully logged out.",
+      });
+      navigate("/auth");
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to log out. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoggingOut(false);
+    }
+  };
+
+  const goalLabels: Record<string, string> = {
+    lose_weight: "Lose Weight",
+    gain_muscle: "Build Muscle",
+    maintain: "Maintain",
+    improve_fitness: "Get Healthier",
+  };
+
+  const displayData = {
+    name: profile?.full_name || authUser?.email?.split("@")[0] || "User",
+    email: profile?.email || authUser?.email || "",
+    goal: profile?.fitness_goal ? goalLabels[profile.fitness_goal] || profile.fitness_goal : "Not set",
+    weight: profile?.weight_current || 0,
+    height: profile?.height_cm || 0,
+    dailyCalories: profile?.daily_calorie_target || 2000,
   };
 
   return (
@@ -50,35 +114,41 @@ export default function Profile() {
 
         {/* Profile Card */}
         <div className="mx-6 mb-6 rounded-xl bg-card border border-border p-6">
-          <div className="flex items-center gap-4">
-            <div className="h-16 w-16 rounded-full bg-primary/20 flex items-center justify-center">
-              <User className="h-8 w-8 text-primary" />
+          {isLoading ? (
+            <div className="flex items-center justify-center py-4">
+              <Loader2 className="h-6 w-6 animate-spin text-primary" />
             </div>
-            <div>
-              <h2 className="text-xl font-bold text-foreground">{user.name}</h2>
-              <p className="text-sm text-muted-foreground">{user.email}</p>
-              <span className="inline-block mt-1 px-2 py-0.5 rounded-full bg-primary/20 text-primary text-xs font-medium">
-                {user.goal}
-              </span>
+          ) : (
+            <div className="flex items-center gap-4">
+              <div className="h-16 w-16 rounded-full bg-primary/20 flex items-center justify-center">
+                <User className="h-8 w-8 text-primary" />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-foreground">{displayData.name}</h2>
+                <p className="text-sm text-muted-foreground">{displayData.email}</p>
+                <span className="inline-block mt-1 px-2 py-0.5 rounded-full bg-primary/20 text-primary text-xs font-medium">
+                  {displayData.goal}
+                </span>
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* Stats */}
         <div className="grid grid-cols-3 gap-3 px-6 mb-6">
           <div className="rounded-xl bg-card border border-border p-4 text-center">
             <Scale className="h-5 w-5 text-primary mx-auto mb-2" />
-            <p className="text-lg font-bold text-foreground">{user.weight}</p>
+            <p className="text-lg font-bold text-foreground">{displayData.weight || "—"}</p>
             <p className="text-xs text-muted-foreground">kg</p>
           </div>
           <div className="rounded-xl bg-card border border-border p-4 text-center">
             <Ruler className="h-5 w-5 text-primary mx-auto mb-2" />
-            <p className="text-lg font-bold text-foreground">{user.height}</p>
+            <p className="text-lg font-bold text-foreground">{displayData.height || "—"}</p>
             <p className="text-xs text-muted-foreground">cm</p>
           </div>
           <div className="rounded-xl bg-card border border-border p-4 text-center">
             <Flame className="h-5 w-5 text-primary mx-auto mb-2" />
-            <p className="text-lg font-bold text-foreground">{user.dailyCalories}</p>
+            <p className="text-lg font-bold text-foreground">{displayData.dailyCalories}</p>
             <p className="text-xs text-muted-foreground">kcal/day</p>
           </div>
         </div>
@@ -103,8 +173,14 @@ export default function Profile() {
           <Button
             variant="outline"
             className="w-full text-destructive border-destructive/30 hover:bg-destructive/10"
+            onClick={handleLogout}
+            disabled={isLoggingOut}
           >
-            <LogOut className="mr-2 h-4 w-4" />
+            {isLoggingOut ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <LogOut className="mr-2 h-4 w-4" />
+            )}
             Sign Out
           </Button>
         </div>
