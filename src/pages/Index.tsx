@@ -4,19 +4,21 @@ import { QuickStats } from "@/components/dashboard/QuickStats";
 import { MealCard } from "@/components/meals/MealCard";
 import { WorkoutCard } from "@/components/workouts/WorkoutCard";
 import { Button } from "@/components/ui/button";
-import { ChevronRight, Sparkles, Loader2 } from "lucide-react";
+import { ChevronRight, Sparkles, Loader2, LogOut } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useMealPlan } from "@/hooks/useMealPlan";
 import { useWorkoutProgram } from "@/hooks/useWorkoutProgram";
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 
 const mealTypeOrder = ["breakfast", "lunch", "snack", "dinner"];
 
 export default function Index() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
+  const { toast } = useToast();
   const { mealPlan, isLoading: mealsLoading } = useMealPlan();
   const { program, isLoading: workoutsLoading } = useWorkoutProgram();
   const [profile, setProfile] = useState<{ full_name?: string; daily_calorie_target?: number } | null>(null);
@@ -68,13 +70,29 @@ export default function Index() {
     return "Good evening";
   }
 
+  const handleLogout = async () => {
+    await signOut();
+    toast({ title: "Logged out", description: "See you next time!" });
+    navigate("/auth");
+  };
+
   return (
     <AppLayout>
       <div className="dark bg-background">
         {/* Header */}
-        <div className="px-6 pt-12 pb-6">
-          <p className="text-muted-foreground">{greeting},</p>
-          <h1 className="text-2xl font-bold text-foreground">{firstName}</h1>
+        <div className="px-6 pt-12 pb-6 flex items-start justify-between">
+          <div>
+            <p className="text-muted-foreground">{greeting},</p>
+            <h1 className="text-2xl font-bold text-foreground">{firstName}</h1>
+          </div>
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            onClick={handleLogout}
+            className="text-muted-foreground hover:text-destructive"
+          >
+            <LogOut className="h-5 w-5" />
+          </Button>
         </div>
 
         {/* Main Progress Ring */}
