@@ -26,11 +26,17 @@ serve(async (req) => {
     const age = profile.age || 30;
     const calorieTarget = profile.daily_calorie_target || 2000;
     const dailyBudget = profile.daily_food_budget || null;
+    const activityLevel = profile.activity_level || 'moderately_active';
+    const otherSports = profile.other_sports || [];
     
     // Calculate protein target (1.6-2.2g/kg based on goal)
     let proteinPerKg = 1.8;
-    if (profile.fitness_goal === 'muscle_gain') proteinPerKg = 2.2;
-    if (profile.fitness_goal === 'fat_loss') proteinPerKg = 2.0;
+    if (profile.fitness_goal === 'muscle_gain' || profile.fitness_goal === 'gain_muscle') proteinPerKg = 2.2;
+    if (profile.fitness_goal === 'fat_loss' || profile.fitness_goal === 'lose_weight') proteinPerKg = 2.0;
+    
+    // Increase protein if user does sports
+    if (otherSports.length > 0) proteinPerKg += 0.2;
+    
     const proteinTarget = Math.round(weight * proteinPerKg);
     
     // Fat: 25% of calories, Carbs: remainder
@@ -57,9 +63,12 @@ USER PROFILE:
 - Age: ${age} years, Height: ${height} cm, Weight: ${weight} kg
 - Goal Weight: ${profile.weight_goal || weight} kg
 - Fitness Goal: ${profile.fitness_goal || 'general_health'}
+- Activity Level: ${activityLevel}
+- Other Sports/Activities: ${otherSports.length > 0 ? otherSports.join(', ') : 'none'}
 - Dietary Preference: ${profile.dietary_preference || 'omnivore'}
 - Allergies: ${(profile.allergies || []).join(', ') || 'none'}
 - Disliked Foods: ${(profile.disliked_foods || []).join(', ') || 'none'}
+${otherSports.length > 0 ? `NOTE: User does ${otherSports.length} additional sports. Ensure adequate recovery nutrition and carbs for energy.` : ''}
 ${budgetTierInfo}
 
 NUTRITIONAL TARGETS:

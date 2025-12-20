@@ -411,6 +411,7 @@ export type Database = {
       }
       profiles: {
         Row: {
+          activity_level: string | null
           age: number | null
           allergies: string[] | null
           avatar_url: string | null
@@ -426,12 +427,15 @@ export type Database = {
           height_cm: number | null
           id: string
           onboarding_completed: boolean | null
+          other_sports: string[] | null
           updated_at: string | null
           weight_current: number | null
           weight_goal: number | null
           workout_location: string | null
+          workouts_per_week: number | null
         }
         Insert: {
+          activity_level?: string | null
           age?: number | null
           allergies?: string[] | null
           avatar_url?: string | null
@@ -447,12 +451,15 @@ export type Database = {
           height_cm?: number | null
           id: string
           onboarding_completed?: boolean | null
+          other_sports?: string[] | null
           updated_at?: string | null
           weight_current?: number | null
           weight_goal?: number | null
           workout_location?: string | null
+          workouts_per_week?: number | null
         }
         Update: {
+          activity_level?: string | null
           age?: number | null
           allergies?: string[] | null
           avatar_url?: string | null
@@ -468,10 +475,12 @@ export type Database = {
           height_cm?: number | null
           id?: string
           onboarding_completed?: boolean | null
+          other_sports?: string[] | null
           updated_at?: string | null
           weight_current?: number | null
           weight_goal?: number | null
           workout_location?: string | null
+          workouts_per_week?: number | null
         }
         Relationships: []
       }

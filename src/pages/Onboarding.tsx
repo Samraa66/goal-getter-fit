@@ -23,7 +23,9 @@ import {
   Apple,
   Leaf,
   Flame,
-  Beef
+  Beef,
+  Bike,
+  Footprints
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -41,6 +43,7 @@ interface OnboardingData {
   workoutLocation: WorkoutLocation | null;
   dietPreference: DietPreference | null;
   activityLevel: ActivityLevel | null;
+  otherSports: string[];
   allergies: string[];
   dislikedFoods: string[];
   weight: string;
@@ -60,22 +63,22 @@ const goals = [
 ];
 
 const experienceLevels = [
-  { id: "beginner" as ExperienceLevel, label: "Just Starting", description: "New to working out or returning after a long break", icon: "🌱" },
-  { id: "intermediate" as ExperienceLevel, label: "Some Experience", description: "Workout regularly for 6+ months", icon: "💪" },
-  { id: "advanced" as ExperienceLevel, label: "Experienced", description: "2+ years of consistent training", icon: "🔥" },
+  { id: "beginner" as ExperienceLevel, label: "Just Starting", description: "New to working out", icon: "🌱" },
+  { id: "intermediate" as ExperienceLevel, label: "Some Experience", description: "6+ months of training", icon: "💪" },
+  { id: "advanced" as ExperienceLevel, label: "Experienced", description: "2+ years consistent", icon: "🔥" },
 ];
 
 const workoutLocations = [
-  { id: "gym" as WorkoutLocation, label: "Gym", description: "Access to full equipment", icon: Building2 },
-  { id: "home" as WorkoutLocation, label: "Home", description: "Minimal or no equipment", icon: Home },
-  { id: "both" as WorkoutLocation, label: "Mix", description: "Flexible between both", icon: Shuffle },
+  { id: "gym" as WorkoutLocation, label: "Gym", description: "Full equipment", icon: Building2 },
+  { id: "home" as WorkoutLocation, label: "Home", description: "Minimal equipment", icon: Home },
+  { id: "both" as WorkoutLocation, label: "Mix", description: "Flexible", icon: Shuffle },
 ];
 
 const activityLevels = [
   { id: "sedentary" as ActivityLevel, label: "Sedentary", description: "Desk job, minimal movement", icon: Moon },
-  { id: "lightly_active" as ActivityLevel, label: "Lightly Active", description: "Some walking, light activity", icon: Clock },
-  { id: "moderately_active" as ActivityLevel, label: "Moderately Active", description: "Regular exercise or active job", icon: Zap },
-  { id: "very_active" as ActivityLevel, label: "Very Active", description: "Intense exercise or physical job", icon: Flame },
+  { id: "lightly_active" as ActivityLevel, label: "Lightly Active", description: "Some walking daily", icon: Clock },
+  { id: "moderately_active" as ActivityLevel, label: "Moderately Active", description: "Active job or hobbies", icon: Zap },
+  { id: "very_active" as ActivityLevel, label: "Very Active", description: "Physical job or athlete", icon: Flame },
 ];
 
 const dietPreferences = [
@@ -86,8 +89,21 @@ const dietPreferences = [
   { id: "paleo" as DietPreference, label: "Paleo", icon: Flame },
 ];
 
-const commonAllergies = ["Dairy", "Gluten", "Nuts", "Shellfish", "Eggs", "Soy", "Fish", "Wheat"];
-const commonDislikedFoods = ["Broccoli", "Spinach", "Mushrooms", "Tofu", "Fish", "Liver", "Brussels Sprouts", "Avocado"];
+const sportsActivities = [
+  { id: "running", label: "Running", icon: "🏃" },
+  { id: "cycling", label: "Cycling", icon: "🚴" },
+  { id: "swimming", label: "Swimming", icon: "🏊" },
+  { id: "football", label: "Football", icon: "⚽" },
+  { id: "basketball", label: "Basketball", icon: "🏀" },
+  { id: "tennis", label: "Tennis/Padel", icon: "🎾" },
+  { id: "martial_arts", label: "Martial Arts", icon: "🥋" },
+  { id: "yoga", label: "Yoga/Pilates", icon: "🧘" },
+  { id: "hiking", label: "Hiking", icon: "🥾" },
+  { id: "dancing", label: "Dancing", icon: "💃" },
+];
+
+const commonAllergies = ["Dairy", "Gluten", "Nuts", "Shellfish", "Eggs", "Soy"];
+const commonDislikedFoods = ["Broccoli", "Spinach", "Mushrooms", "Tofu", "Fish", "Liver"];
 
 export default function Onboarding() {
   const navigate = useNavigate();
@@ -101,6 +117,7 @@ export default function Onboarding() {
     workoutLocation: null,
     dietPreference: null,
     activityLevel: null,
+    otherSports: [],
     allergies: [],
     dislikedFoods: [],
     weight: "",
@@ -112,7 +129,7 @@ export default function Onboarding() {
     dailyFoodBudget: "",
   });
 
-  const totalSteps = 6;
+  const totalSteps = 5;
 
   const handleNext = () => {
     if (step < totalSteps - 1) {
@@ -132,12 +149,15 @@ export default function Onboarding() {
           experience_level: data.experienceLevel,
           workout_location: data.workoutLocation,
           dietary_preference: data.dietPreference,
+          activity_level: data.activityLevel,
+          other_sports: data.otherSports,
           allergies: data.allergies,
           disliked_foods: data.dislikedFoods,
           weight_current: data.weight ? parseFloat(data.weight) : null,
           weight_goal: data.targetWeight ? parseFloat(data.targetWeight) : null,
           height_cm: data.height ? parseInt(data.height) : null,
           age: data.age ? parseInt(data.age) : null,
+          workouts_per_week: data.workoutsPerWeek,
           daily_calorie_target: data.dailyCalorieTarget,
           daily_food_budget: data.dailyFoodBudget ? parseFloat(data.dailyFoodBudget) : null,
           onboarding_completed: true,
@@ -169,6 +189,15 @@ export default function Onboarding() {
     }
   };
 
+  const toggleSport = (sport: string) => {
+    setData((prev) => ({
+      ...prev,
+      otherSports: prev.otherSports.includes(sport)
+        ? prev.otherSports.filter((s) => s !== sport)
+        : [...prev.otherSports, sport],
+    }));
+  };
+
   const toggleAllergy = (allergy: string) => {
     setData((prev) => ({
       ...prev,
@@ -187,7 +216,6 @@ export default function Onboarding() {
     }));
   };
 
-  // Calculate suggested calories based on goal
   const getSuggestedCalories = () => {
     const baseCalories = 2000;
     const goalAdjustment = {
@@ -207,6 +235,11 @@ export default function Onboarding() {
     if (data.goal) suggested += goalAdjustment[data.goal];
     if (data.activityLevel) suggested += activityAdjustment[data.activityLevel];
     
+    // Add extra for sports activities
+    if (data.otherSports.length > 0) {
+      suggested += data.otherSports.length * 100;
+    }
+    
     return suggested;
   };
 
@@ -220,11 +253,11 @@ export default function Onboarding() {
         />
       </div>
 
-      {/* Step 1: Welcome & Goal */}
+      {/* Step 1: Goal + Body Metrics */}
       {step === 0 && (
         <OnboardingStep
           title="What's your main goal?"
-          description="This helps us create a personalized plan just for you."
+          description="We'll create a personalized plan based on this."
           onNext={handleNext}
           isFirst
           canProceed={!!data.goal}
@@ -238,7 +271,7 @@ export default function Onboarding() {
                   "flex items-center gap-4 p-4 rounded-xl border transition-all text-left",
                   data.goal === id
                     ? "border-primary bg-primary/10 scale-[1.02]"
-                    : "border-border bg-card hover:border-primary/50 hover:bg-card/80"
+                    : "border-border bg-card hover:border-primary/50"
                 )}
               >
                 <div className={cn("p-3 rounded-xl bg-background", data.goal === id && "bg-primary/20")}>
@@ -248,209 +281,154 @@ export default function Onboarding() {
                   <span className="font-semibold text-foreground block">{label}</span>
                   <span className="text-sm text-muted-foreground">{description}</span>
                 </div>
-                <div
-                  className={cn(
-                    "h-5 w-5 rounded-full border-2 transition-all",
-                    data.goal === id 
-                      ? "border-primary bg-primary" 
-                      : "border-muted-foreground"
-                  )}
-                />
+                <div className={cn(
+                  "h-5 w-5 rounded-full border-2 transition-all",
+                  data.goal === id ? "border-primary bg-primary" : "border-muted-foreground"
+                )} />
               </button>
             ))}
           </div>
         </OnboardingStep>
       )}
 
-      {/* Step 2: About You - Body Stats */}
+      {/* Step 2: Body Stats + Activity Level */}
       {step === 1 && (
         <OnboardingStep
-          title="Tell us about yourself"
-          description="This helps us calculate your ideal nutrition plan."
+          title="About you"
+          description="Help us calculate your ideal plan."
           onNext={handleNext}
           onBack={handleBack}
-          canProceed={!!data.weight && !!data.height && !!data.age}
+          canProceed={!!data.weight && !!data.height && !!data.age && !!data.activityLevel}
         >
           <div className="space-y-6">
-            <div className="flex items-center gap-4 p-4 rounded-xl bg-card border border-border">
-              <div className="p-3 rounded-full bg-primary/10">
-                <User className="h-6 w-6 text-primary" />
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Your information is kept private and used only to personalize your experience.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-3 gap-3">
               <div>
-                <Label htmlFor="age" className="text-foreground text-sm mb-2 block">Age</Label>
+                <Label className="text-xs text-muted-foreground mb-1 block">Age</Label>
                 <Input
-                  id="age"
                   type="number"
                   placeholder="25"
                   value={data.age}
                   onChange={(e) => setData({ ...data, age: e.target.value })}
-                  className="bg-card text-lg h-12"
+                  className="bg-card h-11"
                 />
               </div>
               <div>
-                <Label htmlFor="height" className="text-foreground text-sm mb-2 block">Height (cm)</Label>
+                <Label className="text-xs text-muted-foreground mb-1 block">Height (cm)</Label>
                 <Input
-                  id="height"
                   type="number"
                   placeholder="175"
                   value={data.height}
                   onChange={(e) => setData({ ...data, height: e.target.value })}
-                  className="bg-card text-lg h-12"
+                  className="bg-card h-11"
                 />
               </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label htmlFor="weight" className="text-foreground text-sm mb-2 block">Current Weight (kg)</Label>
+                <Label className="text-xs text-muted-foreground mb-1 block">Weight (kg)</Label>
                 <Input
-                  id="weight"
                   type="number"
                   placeholder="75"
                   value={data.weight}
                   onChange={(e) => setData({ ...data, weight: e.target.value })}
-                  className="bg-card text-lg h-12"
+                  className="bg-card h-11"
                 />
               </div>
-              <div>
-                <Label htmlFor="targetWeight" className="text-foreground text-sm mb-2 block">Goal Weight (kg)</Label>
-                <Input
-                  id="targetWeight"
-                  type="number"
-                  placeholder="70"
-                  value={data.targetWeight}
-                  onChange={(e) => setData({ ...data, targetWeight: e.target.value })}
-                  className="bg-card text-lg h-12"
-                />
+            </div>
+
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1 block">Goal weight (kg) - optional</Label>
+              <Input
+                type="number"
+                placeholder="70"
+                value={data.targetWeight}
+                onChange={(e) => setData({ ...data, targetWeight: e.target.value })}
+                className="bg-card h-11"
+              />
+            </div>
+
+            <div>
+              <Label className="text-foreground mb-3 block font-medium">Daily activity level</Label>
+              <div className="space-y-2">
+                {activityLevels.map(({ id, label, description, icon: Icon }) => (
+                  <button
+                    key={id}
+                    onClick={() => setData({ ...data, activityLevel: id })}
+                    className={cn(
+                      "w-full flex items-center gap-3 p-3 rounded-xl border transition-all text-left",
+                      data.activityLevel === id
+                        ? "border-primary bg-primary/10"
+                        : "border-border bg-card hover:border-primary/50"
+                    )}
+                  >
+                    <Icon className={cn("h-5 w-5", data.activityLevel === id ? "text-primary" : "text-muted-foreground")} />
+                    <div className="flex-1">
+                      <span className="font-medium text-foreground text-sm block">{label}</span>
+                      <p className="text-xs text-muted-foreground">{description}</p>
+                    </div>
+                  </button>
+                ))}
               </div>
             </div>
           </div>
         </OnboardingStep>
       )}
 
-      {/* Step 3: Activity Level */}
+      {/* Step 3: Workout Preferences + Sports */}
       {step === 2 && (
         <OnboardingStep
-          title="How active are you?"
-          description="Outside of planned workouts, how much do you move?"
-          onNext={handleNext}
-          onBack={handleBack}
-          canProceed={!!data.activityLevel}
-        >
-          <div className="space-y-3">
-            {activityLevels.map(({ id, label, description, icon: Icon }) => (
-              <button
-                key={id}
-                onClick={() => setData({ ...data, activityLevel: id })}
-                className={cn(
-                  "w-full flex items-center gap-4 p-4 rounded-xl border transition-all text-left",
-                  data.activityLevel === id
-                    ? "border-primary bg-primary/10"
-                    : "border-border bg-card hover:border-primary/50"
-                )}
-              >
-                <div className={cn(
-                  "p-2 rounded-lg",
-                  data.activityLevel === id ? "bg-primary/20" : "bg-background"
-                )}>
-                  <Icon className={cn(
-                    "h-5 w-5",
-                    data.activityLevel === id ? "text-primary" : "text-muted-foreground"
-                  )} />
-                </div>
-                <div className="flex-1">
-                  <span className="font-medium text-foreground block">{label}</span>
-                  <p className="text-sm text-muted-foreground">{description}</p>
-                </div>
-                <div
-                  className={cn(
-                    "h-5 w-5 rounded-full border-2",
-                    data.activityLevel === id 
-                      ? "border-primary bg-primary" 
-                      : "border-muted-foreground"
-                  )}
-                />
-              </button>
-            ))}
-          </div>
-        </OnboardingStep>
-      )}
-
-      {/* Step 4: Workout Preferences */}
-      {step === 3 && (
-        <OnboardingStep
-          title="Your workout style"
-          description="How do you prefer to train?"
+          title="Your training"
+          description="How and where do you like to work out?"
           onNext={handleNext}
           onBack={handleBack}
           canProceed={!!data.experienceLevel && !!data.workoutLocation}
         >
           <div className="space-y-6">
             <div>
-              <Label className="text-foreground mb-3 block font-medium">Experience Level</Label>
+              <Label className="text-foreground mb-2 block font-medium">Experience Level</Label>
               <div className="space-y-2">
                 {experienceLevels.map(({ id, label, description, icon }) => (
                   <button
                     key={id}
                     onClick={() => setData({ ...data, experienceLevel: id })}
                     className={cn(
-                      "w-full flex items-center gap-4 p-4 rounded-xl border transition-all text-left",
+                      "w-full flex items-center gap-3 p-3 rounded-xl border transition-all text-left",
                       data.experienceLevel === id
                         ? "border-primary bg-primary/10"
                         : "border-border bg-card hover:border-primary/50"
                     )}
                   >
-                    <span className="text-2xl">{icon}</span>
+                    <span className="text-xl">{icon}</span>
                     <div className="flex-1">
-                      <span className="font-medium text-foreground block">{label}</span>
-                      <p className="text-sm text-muted-foreground">{description}</p>
+                      <span className="font-medium text-foreground text-sm block">{label}</span>
+                      <p className="text-xs text-muted-foreground">{description}</p>
                     </div>
-                    <div
-                      className={cn(
-                        "h-5 w-5 rounded-full border-2",
-                        data.experienceLevel === id 
-                          ? "border-primary bg-primary" 
-                          : "border-muted-foreground"
-                      )}
-                    />
                   </button>
                 ))}
               </div>
             </div>
 
             <div>
-              <Label className="text-foreground mb-3 block font-medium">Where will you work out?</Label>
-              <div className="grid grid-cols-3 gap-3">
-                {workoutLocations.map(({ id, label, description, icon: Icon }) => (
+              <Label className="text-foreground mb-2 block font-medium">Workout Location</Label>
+              <div className="grid grid-cols-3 gap-2">
+                {workoutLocations.map(({ id, label, icon: Icon }) => (
                   <button
                     key={id}
                     onClick={() => setData({ ...data, workoutLocation: id })}
                     className={cn(
-                      "flex flex-col items-center p-4 rounded-xl border transition-all",
+                      "flex flex-col items-center p-3 rounded-xl border transition-all",
                       data.workoutLocation === id
                         ? "border-primary bg-primary/10"
                         : "border-border bg-card hover:border-primary/50"
                     )}
                   >
-                    <Icon className={cn(
-                      "h-6 w-6 mb-2",
-                      data.workoutLocation === id ? "text-primary" : "text-muted-foreground"
-                    )} />
-                    <span className="font-medium text-foreground text-sm">{label}</span>
-                    <span className="text-xs text-muted-foreground text-center mt-1">{description}</span>
+                    <Icon className={cn("h-5 w-5 mb-1", data.workoutLocation === id ? "text-primary" : "text-muted-foreground")} />
+                    <span className="text-sm font-medium text-foreground">{label}</span>
                   </button>
                 ))}
               </div>
             </div>
 
             <div>
-              <Label className="text-foreground mb-3 block font-medium">
+              <Label className="text-foreground mb-2 block font-medium">
                 Workouts per week: <span className="text-primary">{data.workoutsPerWeek}</span>
               </Label>
               <Slider
@@ -461,65 +439,72 @@ export default function Onboarding() {
                 step={1}
                 className="py-4"
               />
-              <div className="flex justify-between text-xs text-muted-foreground">
-                <span>1 day</span>
-                <span>7 days</span>
+            </div>
+
+            <div>
+              <Label className="text-foreground mb-2 block font-medium">Other sports you do? (optional)</Label>
+              <div className="flex flex-wrap gap-2">
+                {sportsActivities.map(({ id, label, icon }) => (
+                  <Button
+                    key={id}
+                    variant={data.otherSports.includes(id) ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => toggleSport(id)}
+                    className="rounded-full"
+                  >
+                    <span className="mr-1">{icon}</span> {label}
+                  </Button>
+                ))}
               </div>
+              <p className="text-xs text-muted-foreground mt-2">
+                This helps us plan recovery and avoid overtraining.
+              </p>
             </div>
           </div>
         </OnboardingStep>
       )}
 
-      {/* Step 5: Diet Preferences */}
-      {step === 4 && (
+      {/* Step 4: Diet + Budget */}
+      {step === 3 && (
         <OnboardingStep
-          title="Your eating preferences"
-          description="Help us create meals you'll actually enjoy."
+          title="Nutrition"
+          description="We'll suggest meals you'll actually want to eat."
           onNext={handleNext}
           onBack={handleBack}
           canProceed={!!data.dietPreference}
         >
           <div className="space-y-6">
             <div>
-              <Label className="text-foreground mb-3 block font-medium">Diet Type</Label>
+              <Label className="text-foreground mb-2 block font-medium">Diet preference</Label>
               <div className="grid grid-cols-2 gap-2">
                 {dietPreferences.map(({ id, label, icon: Icon }) => (
                   <button
                     key={id}
                     onClick={() => setData({ ...data, dietPreference: id })}
                     className={cn(
-                      "flex items-center gap-3 p-3 rounded-xl border transition-all text-left",
+                      "flex items-center gap-2 p-3 rounded-xl border transition-all text-left",
                       data.dietPreference === id
                         ? "border-primary bg-primary/10"
                         : "border-border bg-card hover:border-primary/50"
                     )}
                   >
-                    <Icon className={cn(
-                      "h-5 w-5",
-                      data.dietPreference === id ? "text-primary" : "text-muted-foreground"
-                    )} />
-                    <span className={cn(
-                      "font-medium text-sm",
-                      data.dietPreference === id ? "text-foreground" : "text-muted-foreground"
-                    )}>{label}</span>
+                    <Icon className={cn("h-4 w-4", data.dietPreference === id ? "text-primary" : "text-muted-foreground")} />
+                    <span className="text-sm font-medium text-foreground">{label}</span>
                   </button>
                 ))}
               </div>
             </div>
 
             <div>
-              <Label className="text-foreground mb-3 block font-medium">Any allergies?</Label>
+              <Label className="text-foreground mb-2 block font-medium">Allergies (optional)</Label>
               <div className="flex flex-wrap gap-2">
                 {commonAllergies.map((allergy) => (
                   <Button
                     key={allergy}
-                    variant={data.allergies.includes(allergy) ? "default" : "outline"}
+                    variant={data.allergies.includes(allergy) ? "destructive" : "outline"}
                     size="sm"
                     onClick={() => toggleAllergy(allergy)}
-                    className={cn(
-                      "rounded-full",
-                      data.allergies.includes(allergy) && "bg-destructive hover:bg-destructive/90"
-                    )}
+                    className="rounded-full"
                   >
                     {allergy}
                   </Button>
@@ -528,53 +513,45 @@ export default function Onboarding() {
             </div>
 
             <div>
-              <Label className="text-foreground mb-3 block font-medium">Foods you don't like?</Label>
+              <Label className="text-foreground mb-2 block font-medium">Foods to avoid (optional)</Label>
               <div className="flex flex-wrap gap-2">
                 {commonDislikedFoods.map((food) => (
                   <Button
                     key={food}
-                    variant={data.dislikedFoods.includes(food) ? "default" : "outline"}
+                    variant={data.dislikedFoods.includes(food) ? "secondary" : "outline"}
                     size="sm"
                     onClick={() => toggleDislikedFood(food)}
-                    className={cn(
-                      "rounded-full",
-                      data.dislikedFoods.includes(food) && "bg-orange-500 hover:bg-orange-600"
-                    )}
+                    className="rounded-full"
                   >
                     {food}
                   </Button>
                 ))}
+              </div>
             </div>
 
             <div>
-              <Label htmlFor="budget" className="text-foreground mb-3 block font-medium">
-                Daily food budget (optional)
-              </Label>
+              <Label className="text-foreground mb-2 block font-medium">Daily food budget (optional)</Label>
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
                 <Input
-                  id="budget"
                   type="number"
                   placeholder="15"
                   value={data.dailyFoodBudget}
                   onChange={(e) => setData({ ...data, dailyFoodBudget: e.target.value })}
-                  className="bg-card text-lg h-12 pl-8"
+                  className="bg-card h-11 pl-8"
                 />
               </div>
-              <p className="text-xs text-muted-foreground mt-2">
-                Set a budget to get affordable meal suggestions that won't break the bank.
-              </p>
+              <p className="text-xs text-muted-foreground mt-1">We'll suggest affordable meals within your budget.</p>
             </div>
-          </div>
           </div>
         </OnboardingStep>
       )}
 
-      {/* Step 6: Calorie Target & Review */}
-      {step === 5 && (
+      {/* Step 5: Calorie Target + Review */}
+      {step === 4 && (
         <OnboardingStep
-          title="Your daily calorie target"
-          description="We've calculated a suggested target based on your goals."
+          title="Your daily target"
+          description="Adjust based on your preferences."
           onNext={handleComplete}
           onBack={handleBack}
           isLast
@@ -582,14 +559,14 @@ export default function Onboarding() {
         >
           <div className="space-y-6">
             <div className="text-center p-6 rounded-2xl bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/20">
-              <p className="text-sm text-muted-foreground mb-2">Recommended daily calories</p>
+              <p className="text-sm text-muted-foreground mb-2">Recommended calories</p>
               <p className="text-5xl font-bold text-primary">{getSuggestedCalories()}</p>
               <p className="text-sm text-muted-foreground mt-2">kcal / day</p>
             </div>
 
             <div>
               <Label className="text-foreground mb-3 block font-medium">
-                Adjust if needed: <span className="text-primary">{data.dailyCalorieTarget} kcal</span>
+                Adjust: <span className="text-primary">{data.dailyCalorieTarget} kcal</span>
               </Label>
               <Slider
                 value={[data.dailyCalorieTarget]}
@@ -599,10 +576,6 @@ export default function Onboarding() {
                 step={50}
                 className="py-4"
               />
-              <div className="flex justify-between text-xs text-muted-foreground">
-                <span>1,200</span>
-                <span>4,000</span>
-              </div>
               <Button 
                 variant="ghost" 
                 size="sm" 
@@ -613,10 +586,9 @@ export default function Onboarding() {
               </Button>
             </div>
 
-            {/* Summary */}
-            <div className="rounded-xl bg-card border border-border p-4 space-y-3">
-              <p className="font-medium text-foreground">Your Plan Summary</p>
-              <div className="grid grid-cols-2 gap-2 text-sm">
+            <div className="rounded-xl bg-card border border-border p-4 space-y-2">
+              <p className="font-medium text-foreground text-sm">Summary</p>
+              <div className="grid grid-cols-2 gap-2 text-xs">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Goal:</span>
                   <span className="text-foreground capitalize">{data.goal?.replace('_', ' ')}</span>
@@ -630,9 +602,15 @@ export default function Onboarding() {
                   <span className="text-foreground">{data.workoutsPerWeek}x/week</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Diet:</span>
-                  <span className="text-foreground capitalize">{data.dietPreference === 'none' ? 'Flexible' : data.dietPreference}</span>
+                  <span className="text-muted-foreground">Location:</span>
+                  <span className="text-foreground capitalize">{data.workoutLocation}</span>
                 </div>
+                {data.otherSports.length > 0 && (
+                  <div className="col-span-2 flex justify-between">
+                    <span className="text-muted-foreground">Sports:</span>
+                    <span className="text-foreground">{data.otherSports.length} activities</span>
+                  </div>
+                )}
               </div>
             </div>
           </div>
