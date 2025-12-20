@@ -24,20 +24,42 @@ serve(async (req) => {
     const fitnessGoal = profile.fitness_goal || 'general_fitness';
     const workoutLocation = profile.workout_location || 'gym';
     const availableTime = profile.available_time_minutes || 60;
+    const otherSports = profile.other_sports || [];
+    const activityLevel = profile.activity_level || 'moderately_active';
+    const workoutsPerWeek = profile.workouts_per_week || 3;
     
-    // Determine training split based on experience
+    // Determine training split based on experience and other activities
     let trainingSplit = "Full Body (3x/week)";
-    let daysPerWeek = 3;
+    let daysPerWeek = workoutsPerWeek;
     let setsPerMuscle = "10-12";
+    
+    // Reduce gym workouts if user does other sports
+    const hasCardioSports = otherSports.some((s: string) => ['running', 'cycling', 'swimming', 'football', 'basketball', 'tennis', 'hiking'].includes(s));
+    const hasLegIntenseSports = otherSports.some((s: string) => ['running', 'cycling', 'football', 'basketball', 'hiking', 'martial_arts'].includes(s));
     
     if (experienceLevel === 'intermediate') {
       trainingSplit = "Push/Pull/Legs (3-4x/week)";
-      daysPerWeek = 4;
+      daysPerWeek = Math.min(workoutsPerWeek, hasCardioSports ? 3 : 4);
       setsPerMuscle = "12-16";
     } else if (experienceLevel === 'advanced') {
-      trainingSplit = "Push/Pull/Legs (6x/week)";
-      daysPerWeek = 6;
+      trainingSplit = "Push/Pull/Legs (4-6x/week)";
+      daysPerWeek = Math.min(workoutsPerWeek, hasCardioSports ? 4 : 6);
       setsPerMuscle = "16-20";
+    }
+
+    // Sports-specific adjustment guidance
+    let sportsGuidance = "";
+    if (otherSports.length > 0) {
+      sportsGuidance = `
+OTHER ACTIVITIES USER DOES: ${otherSports.join(", ")}
+
+CRITICAL SPORT-SPECIFIC ADJUSTMENTS:
+${hasLegIntenseSports ? `- User does leg-intensive sports (${otherSports.filter((s: string) => ['running', 'cycling', 'football', 'basketball', 'hiking', 'martial_arts'].includes(s)).join(', ')}). REDUCE leg workout volume by 30-40%. Avoid heavy leg days before/after sport days.` : ''}
+${hasCardioSports ? `- User gets cardio from sports. SKIP separate cardio sessions in the gym program.` : ''}
+- Schedule REST days around sport activities
+- Prioritize upper body work if legs are taxed from sports
+- Include extra mobility/recovery work for sport-specific muscles
+- Consider this an HYBRID athlete, not pure gym trainee`;
     }
 
     // Adjust for goal
@@ -98,6 +120,8 @@ GYM EQUIPMENT AVAILABLE:
 ====== PROGRAM DESIGN PRINCIPLES ======
 Recommended Split: ${trainingSplit}
 Weekly Sets Per Muscle Group: ${setsPerMuscle} sets (evidence-based hypertrophy range)
+User Activity Level: ${activityLevel}
+${sportsGuidance}
 ${goalSpecificGuidance}
 ${equipmentGuidance}
 

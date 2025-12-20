@@ -27,6 +27,12 @@ serve(async (req) => {
       if (profile.fitness_goal) parts.push(`Goal: ${profile.fitness_goal}`);
       if (profile.experience_level) parts.push(`Experience: ${profile.experience_level}`);
       if (profile.workout_location) parts.push(`Workouts at: ${profile.workout_location}`);
+      if (profile.activity_level) parts.push(`Activity level: ${profile.activity_level}`);
+      if (profile.workouts_per_week) parts.push(`Workouts per week: ${profile.workouts_per_week}`);
+      if (profile.other_sports?.length) {
+        parts.push(`Other sports/activities: ${profile.other_sports.join(", ")}`);
+        parts.push(`NOTE: User does ${profile.other_sports.length} additional sport(s). Adjust workout frequency and recovery accordingly. Reduce leg-heavy gym days if running/cycling/football is involved.`);
+      }
       if (profile.dietary_preference) parts.push(`Diet: ${profile.dietary_preference}`);
       if (profile.daily_calorie_target) parts.push(`Daily calories: ${profile.daily_calorie_target}`);
       if (profile.daily_food_budget) parts.push(`Daily food budget: $${profile.daily_food_budget}`);
