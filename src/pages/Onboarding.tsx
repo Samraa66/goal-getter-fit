@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { OnboardingStep } from "@/components/onboarding/OnboardingStep";
 import { Button } from "@/components/ui/button";
@@ -111,6 +111,7 @@ export default function Onboarding() {
   const { toast } = useToast();
   const [step, setStep] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
+  const [isApplyingPending, setIsApplyingPending] = useState(false);
   const [data, setData] = useState<OnboardingData>({
     goal: null,
     experienceLevel: null,
@@ -129,7 +130,89 @@ export default function Onboarding() {
     dailyFoodBudget: "",
   });
 
+  // Check for pending onboarding data from pre-signup flow OR redirect if already onboarded
+  useEffect(() => {
+    const checkOnboardingStatus = async () => {
+      const pendingData = localStorage.getItem("pendingOnboarding");
+      
+      if (user) {
+        // Check if user already completed onboarding
+        const { data: profileData } = await supabase
+          .from("profiles")
+          .select("onboarding_completed")
+          .eq("id", user.id)
+          .single();
+        
+        if (profileData?.onboarding_completed && !pendingData) {
+          // Already onboarded, redirect to home
+          navigate("/");
+          return;
+        }
+        
+        // Apply pending onboarding data if exists
+        if (pendingData) {
+          setIsApplyingPending(true);
+          try {
+            const parsed = JSON.parse(pendingData);
+            
+            const { error } = await supabase
+              .from("profiles")
+              .update({
+                fitness_goal: parsed.goal,
+                experience_level: parsed.experienceLevel,
+                workout_location: parsed.workoutLocation,
+                dietary_preference: parsed.dietPreference,
+                activity_level: parsed.activityLevel,
+                other_sports: parsed.otherSports || [],
+                allergies: parsed.allergies || [],
+                disliked_foods: parsed.dislikedFoods || [],
+                weight_current: parsed.weight ? parseFloat(parsed.weight) : null,
+                weight_goal: parsed.targetWeight ? parseFloat(parsed.targetWeight) : null,
+                height_cm: parsed.height ? parseInt(parsed.height) : null,
+                age: parsed.age ? parseInt(parsed.age) : null,
+                workouts_per_week: parsed.workoutsPerWeek || 3,
+                daily_calorie_target: parsed.dailyCalorieTarget || 2000,
+                daily_food_budget: parsed.dailyFoodBudget ? parseFloat(parsed.dailyFoodBudget) : null,
+                onboarding_completed: true,
+              })
+              .eq("id", user.id);
+
+            if (error) throw error;
+            
+            localStorage.removeItem("pendingOnboarding");
+            toast({
+              title: "You're all set! 🎉",
+              description: "Your personalized plan is ready.",
+            });
+            navigate("/");
+          } catch (error) {
+            console.error("Error applying pending onboarding:", error);
+            localStorage.removeItem("pendingOnboarding");
+            toast({
+              title: "Let's set up your profile",
+              description: "Please complete the setup.",
+            });
+          } finally {
+            setIsApplyingPending(false);
+          }
+        }
+      }
+    };
+
+    checkOnboardingStatus();
+  }, [user, navigate, toast]);
+
   const totalSteps = 5;
+
+  // Show loading while applying pending data
+  if (isApplyingPending) {
+    return (
+      <div className="dark min-h-screen flex flex-col items-center justify-center bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
+        <p className="text-muted-foreground">Setting up your personalized plan...</p>
+      </div>
+    );
+  }
 
   const handleNext = () => {
     if (step < totalSteps - 1) {
@@ -137,48 +220,64 @@ export default function Onboarding() {
     }
   };
 
+  const saveOnboardingToProfile = async (userId: string) => {
+    const { error } = await supabase
+      .from("profiles")
+      .update({
+        fitness_goal: data.goal,
+        experience_level: data.experienceLevel,
+        workout_location: data.workoutLocation,
+        dietary_preference: data.dietPreference,
+        activity_level: data.activityLevel,
+        other_sports: data.otherSports,
+        allergies: data.allergies,
+        disliked_foods: data.dislikedFoods,
+        weight_current: data.weight ? parseFloat(data.weight) : null,
+        weight_goal: data.targetWeight ? parseFloat(data.targetWeight) : null,
+        height_cm: data.height ? parseInt(data.height) : null,
+        age: data.age ? parseInt(data.age) : null,
+        workouts_per_week: data.workoutsPerWeek,
+        daily_calorie_target: data.dailyCalorieTarget,
+        daily_food_budget: data.dailyFoodBudget ? parseFloat(data.dailyFoodBudget) : null,
+        onboarding_completed: true,
+      })
+      .eq("id", userId);
+    
+    return { error };
+  };
+
   const handleComplete = async () => {
-    if (!user) return;
-
     setIsLoading(true);
-    try {
-      const { error } = await supabase
-        .from("profiles")
-        .update({
-          fitness_goal: data.goal,
-          experience_level: data.experienceLevel,
-          workout_location: data.workoutLocation,
-          dietary_preference: data.dietPreference,
-          activity_level: data.activityLevel,
-          other_sports: data.otherSports,
-          allergies: data.allergies,
-          disliked_foods: data.dislikedFoods,
-          weight_current: data.weight ? parseFloat(data.weight) : null,
-          weight_goal: data.targetWeight ? parseFloat(data.targetWeight) : null,
-          height_cm: data.height ? parseInt(data.height) : null,
-          age: data.age ? parseInt(data.age) : null,
-          workouts_per_week: data.workoutsPerWeek,
-          daily_calorie_target: data.dailyCalorieTarget,
-          daily_food_budget: data.dailyFoodBudget ? parseFloat(data.dailyFoodBudget) : null,
-          onboarding_completed: true,
-        })
-        .eq("id", user.id);
+    
+    if (user) {
+      // User is logged in - save directly to profile
+      try {
+        const { error } = await saveOnboardingToProfile(user.id);
+        if (error) throw error;
 
-      if (error) throw error;
-
+        toast({
+          title: "You're all set! 🎉",
+          description: "Your personalized plan is ready.",
+        });
+        navigate("/");
+      } catch (error) {
+        console.error("Error saving profile:", error);
+        toast({
+          title: "Error",
+          description: "Failed to save your profile. Please try again.",
+          variant: "destructive",
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    } else {
+      // User is not logged in - store data and redirect to signup
+      localStorage.setItem("pendingOnboarding", JSON.stringify(data));
       toast({
-        title: "You're all set! 🎉",
-        description: "Your personalized plan is ready.",
+        title: "Almost there!",
+        description: "Create an account to save your personalized plan.",
       });
-      navigate("/");
-    } catch (error) {
-      console.error("Error saving profile:", error);
-      toast({
-        title: "Error",
-        description: "Failed to save your profile. Please try again.",
-        variant: "destructive",
-      });
-    } finally {
+      navigate("/auth?signup=true");
       setIsLoading(false);
     }
   };

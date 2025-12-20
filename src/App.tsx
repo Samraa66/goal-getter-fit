@@ -27,11 +27,8 @@ const App = () => (
         <AuthProvider>
           <Routes>
             <Route path="/auth" element={<Auth />} />
-            <Route path="/onboarding" element={
-              <ProtectedRoute>
-                <Onboarding />
-              </ProtectedRoute>
-            } />
+            {/* Onboarding accessible without auth for new users */}
+            <Route path="/onboarding" element={<Onboarding />} />
             <Route path="/" element={
               <ProtectedRoute>
                 <Index />

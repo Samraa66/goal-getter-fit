@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,12 +7,15 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Dumbbell, Mail, Lock, User } from "lucide-react";
 import { z } from "zod";
+import { supabase } from "@/integrations/supabase/client";
 
 const emailSchema = z.string().email("Please enter a valid email address");
 const passwordSchema = z.string().min(6, "Password must be at least 6 characters");
 
 export default function Auth() {
-  const [isLogin, setIsLogin] = useState(true);
+  const [searchParams] = useSearchParams();
+  const showSignup = searchParams.get("signup") === "true";
+  const [isLogin, setIsLogin] = useState(!showSignup);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
@@ -23,9 +26,22 @@ export default function Auth() {
   const navigate = useNavigate();
   const { toast } = useToast();
 
+  // Check if user is logged in and redirect appropriately
   useEffect(() => {
     if (!loading && user) {
-      navigate("/");
+      // Check onboarding status
+      supabase
+        .from("profiles")
+        .select("onboarding_completed")
+        .eq("id", user.id)
+        .single()
+        .then(({ data }) => {
+          if (data?.onboarding_completed) {
+            navigate("/");
+          } else {
+            navigate("/onboarding");
+          }
+        });
     }
   }, [user, loading, navigate]);
 
@@ -93,11 +109,23 @@ export default function Auth() {
             });
           }
         } else {
-          toast({
-            title: "Account created!",
-            description: "Welcome to FitLife. Let's set up your profile.",
-          });
-          navigate("/onboarding");
+          // Check for pending onboarding data and apply it
+          const pendingOnboarding = localStorage.getItem("pendingOnboarding");
+          if (pendingOnboarding) {
+            toast({
+              title: "Account created!",
+              description: "Saving your personalized plan...",
+            });
+            // The onboarding data will be applied after redirect
+            // We don't apply here because user.id isn't available yet
+            navigate("/onboarding");
+          } else {
+            toast({
+              title: "Account created!",
+              description: "Welcome to FitLife. Let's set up your profile.",
+            });
+            navigate("/onboarding");
+          }
         }
       }
     } catch (error) {
