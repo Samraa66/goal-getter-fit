@@ -6,7 +6,7 @@ interface StatCardProps {
   icon: React.ElementType;
   label: string;
   value: string;
-  subtext?: string;
+  subtext?: string | React.ReactNode;
   colorClass?: string;
   action?: React.ReactNode;
 }
@@ -48,7 +48,7 @@ export function QuickStats({ calories, protein, water, streak, onAddWater }: Qui
         icon={Target}
         label="Protein"
         value={`${protein.consumed}g`}
-        subtext={`of ${protein.target}g`}
+        subtext={<span className="text-muted-foreground">of <span className="text-foreground font-medium">{protein.target}g</span></span>}
       />
       <StatCard
         icon={Droplets}
