@@ -432,31 +432,34 @@ function buildSplitFromPreference(preferredSplit: string, days: number) {
 function normalizeWorkoutType(type: string): string {
   const normalized = type.toLowerCase().replace(/[\s-]+/g, '_');
   
-  // Map common variations to standard types
+  // Map all workout types to the allowed database values: strength, cardio, flexibility, rest
+  // The visual display name is handled separately in the UI via the workout name field
   const typeMap: Record<string, string> = {
-    'push': 'push',
-    'pushing': 'push',
-    'chest_shoulders_triceps': 'push',
-    'pull': 'pull',
-    'pulling': 'pull',
-    'back_biceps': 'pull',
-    'legs': 'legs',
-    'leg': 'legs',
-    'lower_body': 'lower',
-    'lower': 'lower',
-    'upper_body': 'upper',
-    'upper': 'upper',
-    'full_body': 'full_body',
-    'full': 'full_body',
-    'chest': 'chest',
-    'back': 'back',
-    'shoulders': 'shoulders',
-    'arms': 'arms',
+    'push': 'strength',
+    'pushing': 'strength',
+    'chest_shoulders_triceps': 'strength',
+    'pull': 'strength',
+    'pulling': 'strength',
+    'back_biceps': 'strength',
+    'legs': 'strength',
+    'leg': 'strength',
+    'lower_body': 'strength',
+    'lower': 'strength',
+    'upper_body': 'strength',
+    'upper': 'strength',
+    'full_body': 'strength',
+    'full': 'strength',
+    'chest': 'strength',
+    'back': 'strength',
+    'shoulders': 'strength',
+    'arms': 'strength',
     'cardio': 'cardio',
     'rest': 'rest',
     'recovery': 'rest',
     'strength': 'strength',
     'flexibility': 'flexibility',
+    'stretching': 'flexibility',
+    'yoga': 'flexibility',
   };
   
   return typeMap[normalized] || 'strength';
