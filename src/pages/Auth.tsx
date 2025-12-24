@@ -122,7 +122,7 @@ export default function Auth() {
           } else {
             toast({
               title: "Account created!",
-              description: "Welcome to FitLife. Let's set up your profile.",
+              description: "Welcome to Forme. Let's set up your profile.",
             });
             navigate("/onboarding");
           }
@@ -154,8 +154,8 @@ export default function Auth() {
         <div className="h-16 w-16 rounded-2xl gradient-primary flex items-center justify-center mb-4 glow-primary">
           <Dumbbell className="h-8 w-8 text-primary-foreground" />
         </div>
-        <h1 className="text-3xl font-bold text-foreground">FitLife</h1>
-        <p className="text-muted-foreground mt-1">Your AI-powered fitness companion</p>
+        <h1 className="text-3xl font-bold text-foreground">Forme</h1>
+        <p className="text-muted-foreground mt-1">Adaptive coaching for real life</p>
       </div>
 
       {/* Auth Card */}

@@ -41,7 +41,7 @@ export default function Coach() {
   const { checkForProfileUpdates, triggerRegeneration } = useProfileUpdates();
   const [messages, setMessages] = useState<Message[]>([{
     role: "assistant",
-    content: "Hey! I'm your AI fitness coach. Ask me anything about nutrition, workouts, or your fitness goals.\n\nYou can also tell me things like:\n• \"I prefer Push/Pull/Legs\"\n• \"I also play football\"\n• \"This plan is too intense\"\n• \"I have a match this Saturday\"\n\nI'll update your plans automatically!"
+    content: "Hey! I'm your Forme Coach. I'll help you find your balance — fitness, nutrition, and everything in between.\n\nYou can tell me things like:\n• \"I prefer Push/Pull/Legs\"\n• \"I also play football\"\n• \"This plan is too intense\"\n• \"I have a match this Saturday\"\n\nI'll adjust your Forme for this week!"
   }]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -199,8 +199,8 @@ export default function Coach() {
               <Sparkles className="h-5 w-5 text-primary-foreground" />
             </div>
             <div>
-              <h1 className="text-xl font-bold text-foreground">AI Coach</h1>
-              <p className="text-sm text-muted-foreground">Your personal fitness assistant</p>
+              <h1 className="text-xl font-bold text-foreground">Forme Coach</h1>
+              <p className="text-sm text-muted-foreground">Adaptive coaching for your week</p>
             </div>
           </div>
         </div>
@@ -224,7 +224,7 @@ export default function Coach() {
         {/* Input */}
         <div className="p-4 border-t border-border pb-24">
           <form onSubmit={handleSubmit} className="flex gap-2 text-secondary-foreground">
-            <Input value={input} onChange={e => setInput(e.target.value)} placeholder="Ask your coach..." className="flex-1 bg-card" disabled={isLoading} />
+            <Input value={input} onChange={e => setInput(e.target.value)} placeholder="Talk to your coach..." className="flex-1 bg-card" disabled={isLoading} />
             <Button type="submit" size="icon" className="gradient-primary" disabled={!input.trim() || isLoading}>
               <Send className="h-4 w-4" />
             </Button>
