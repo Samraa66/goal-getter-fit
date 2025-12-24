@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 
 interface WorkoutCardProps {
   name: string;
-  type: "strength" | "cardio" | "flexibility";
+  type: string;
   duration: number;
   calories: number;
   exercises: number;
@@ -12,7 +12,7 @@ interface WorkoutCardProps {
   onStart?: () => void;
 }
 
-const workoutTypeStyles = {
+const workoutTypeStyles: Record<string, { gradient: string; badge: string; label: string }> = {
   strength: {
     gradient: "from-orange-500/20 to-red-500/20",
     badge: "bg-orange-500/20 text-orange-400",
@@ -28,6 +28,47 @@ const workoutTypeStyles = {
     badge: "bg-purple-500/20 text-purple-400",
     label: "Flexibility",
   },
+  push: {
+    gradient: "from-orange-500/20 to-amber-500/20",
+    badge: "bg-orange-500/20 text-orange-400",
+    label: "Push",
+  },
+  pull: {
+    gradient: "from-blue-500/20 to-indigo-500/20",
+    badge: "bg-blue-500/20 text-blue-400",
+    label: "Pull",
+  },
+  legs: {
+    gradient: "from-green-500/20 to-emerald-500/20",
+    badge: "bg-green-500/20 text-green-400",
+    label: "Legs",
+  },
+  rest: {
+    gradient: "from-gray-500/20 to-slate-500/20",
+    badge: "bg-gray-500/20 text-gray-400",
+    label: "Rest",
+  },
+  upper: {
+    gradient: "from-red-500/20 to-orange-500/20",
+    badge: "bg-red-500/20 text-red-400",
+    label: "Upper Body",
+  },
+  lower: {
+    gradient: "from-teal-500/20 to-green-500/20",
+    badge: "bg-teal-500/20 text-teal-400",
+    label: "Lower Body",
+  },
+  full_body: {
+    gradient: "from-purple-500/20 to-violet-500/20",
+    badge: "bg-purple-500/20 text-purple-400",
+    label: "Full Body",
+  },
+};
+
+const defaultStyle = {
+  gradient: "from-primary/20 to-accent/20",
+  badge: "bg-primary/20 text-primary",
+  label: "Workout",
 };
 
 export function WorkoutCard({
@@ -39,7 +80,8 @@ export function WorkoutCard({
   completed = false,
   onStart,
 }: WorkoutCardProps) {
-  const style = workoutTypeStyles[type];
+  const normalizedType = type?.toLowerCase().replace(/[\s-]+/g, "_") || "";
+  const style = workoutTypeStyles[normalizedType] || defaultStyle;
 
   return (
     <div
