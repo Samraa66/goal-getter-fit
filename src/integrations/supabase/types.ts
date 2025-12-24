@@ -424,10 +424,12 @@ export type Database = {
           experience_level: string | null
           fitness_goal: string | null
           full_name: string | null
+          gender: string | null
           height_cm: number | null
           id: string
           onboarding_completed: boolean | null
           other_sports: string[] | null
+          preferred_split: string | null
           updated_at: string | null
           weight_current: number | null
           weight_goal: number | null
@@ -448,10 +450,12 @@ export type Database = {
           experience_level?: string | null
           fitness_goal?: string | null
           full_name?: string | null
+          gender?: string | null
           height_cm?: number | null
           id: string
           onboarding_completed?: boolean | null
           other_sports?: string[] | null
+          preferred_split?: string | null
           updated_at?: string | null
           weight_current?: number | null
           weight_goal?: number | null
@@ -472,10 +476,12 @@ export type Database = {
           experience_level?: string | null
           fitness_goal?: string | null
           full_name?: string | null
+          gender?: string | null
           height_cm?: number | null
           id?: string
           onboarding_completed?: boolean | null
           other_sports?: string[] | null
+          preferred_split?: string | null
           updated_at?: string | null
           weight_current?: number | null
           weight_goal?: number | null
