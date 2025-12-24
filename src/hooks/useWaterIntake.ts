@@ -58,6 +58,12 @@ export function useWaterIntake(date: Date = new Date()) {
 
     const newGlasses = waterIntake.glasses + glasses;
     
+    // Prevent exceeding reasonable limit (e.g., 20 glasses = 5L)
+    if (newGlasses > 20) {
+      toast.info("Maximum water intake reached for today");
+      return;
+    }
+    
     try {
       if (waterIntake.id) {
         const { error } = await supabase
@@ -88,8 +94,8 @@ export function useWaterIntake(date: Date = new Date()) {
         liters: parseFloat((newGlasses * 0.25).toFixed(1)),
       }));
 
-      if (newGlasses >= waterIntake.targetGlasses) {
-        toast.success("🎉 Daily water goal reached!");
+      if (newGlasses >= waterIntake.targetGlasses && waterIntake.glasses < waterIntake.targetGlasses) {
+        toast.success("Daily water goal reached!");
       }
     } catch (error) {
       console.error("Error updating water intake:", error);
