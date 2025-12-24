@@ -56,14 +56,20 @@ export default function Meals() {
   const today = new Date();
   const tomorrow = addDays(today, 1);
   
-  const { mealPlan, isLoading, isGenerating, generateMealPlan, refetch } = useMealPlan(today);
+  const { mealPlan, isLoading, isGenerating, generateMealPlan, toggleMealComplete, refetch } = useMealPlan(today);
   const { 
     mealPlan: tomorrowPlan, 
     isGenerating: isGeneratingTomorrow, 
-    generateMealPlan: generateTomorrowPlan 
+    generateMealPlan: generateTomorrowPlan,
+    toggleMealComplete: toggleTomorrowComplete,
   } = useMealPlan(tomorrow);
   
   const { weekPlans, allMeals, isLoading: isLoadingWeek } = useWeeklyMealPlans();
+  
+  // Calculate consumed vs planned based on completed meals
+  const completedMeals = mealPlan?.meals.filter(m => m.is_completed) || [];
+  const consumedCalories = completedMeals.reduce((sum, m) => sum + (m.calories || 0), 0);
+  const consumedProtein = completedMeals.reduce((sum, m) => sum + (m.protein || 0), 0);
 
   const sortedMeals = mealPlan?.meals.slice().sort(
     (a, b) => mealTypeOrder.indexOf(a.meal_type) - mealTypeOrder.indexOf(b.meal_type)
@@ -358,15 +364,28 @@ export default function Meals() {
 
         {/* Summary Bar */}
         {mealPlan && (
-          <div className="mx-6 mb-4 flex items-center justify-between rounded-xl bg-card border border-border p-4">
-            <div>
-              <p className="text-sm text-muted-foreground">Today's Total</p>
-              <p className="text-xl font-bold text-foreground">{mealPlan.total_calories} kcal</p>
+          <div className="mx-6 mb-4 rounded-xl bg-card border border-border p-4">
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <p className="text-sm text-muted-foreground">Consumed / Planned</p>
+                <p className="text-xl font-bold text-foreground">
+                  <span className="text-primary">{consumedCalories}</span>
+                  <span className="text-muted-foreground mx-1">/</span>
+                  {mealPlan.total_calories} kcal
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-sm text-muted-foreground">Protein</p>
+                <p className="text-xl font-bold">
+                  <span className="text-primary">{consumedProtein}g</span>
+                  <span className="text-muted-foreground mx-1">/</span>
+                  {mealPlan.total_protein}g
+                </p>
+              </div>
             </div>
-            <div className="text-right">
-              <p className="text-sm text-muted-foreground">Protein</p>
-              <p className="text-xl font-bold text-primary">{mealPlan.total_protein}g</p>
-            </div>
+            <p className="text-xs text-muted-foreground">
+              Mark meals as done to track your intake
+            </p>
           </div>
         )}
 
@@ -415,6 +434,7 @@ export default function Meals() {
                 {sortedMeals.map((meal) => (
                   <MealCard
                     key={meal.id}
+                    id={meal.id}
                     type={meal.meal_type as "breakfast" | "lunch" | "dinner" | "snack"}
                     name={meal.name}
                     calories={meal.calories}
@@ -423,6 +443,8 @@ export default function Meals() {
                     fats={meal.fats}
                     recipe={meal.recipe}
                     description={meal.description}
+                    isCompleted={meal.is_completed}
+                    onToggleComplete={(completed) => toggleMealComplete(meal.id, completed)}
                   />
                 ))}
                 <Button 
@@ -450,6 +472,7 @@ export default function Meals() {
                 {sortedTomorrowMeals.map((meal) => (
                   <MealCard
                     key={meal.id}
+                    id={meal.id}
                     type={meal.meal_type as "breakfast" | "lunch" | "dinner" | "snack"}
                     name={meal.name}
                     calories={meal.calories}
@@ -458,6 +481,8 @@ export default function Meals() {
                     fats={meal.fats}
                     recipe={meal.recipe}
                     description={meal.description}
+                    isCompleted={meal.is_completed}
+                    onToggleComplete={(completed) => toggleTomorrowComplete(meal.id, completed)}
                   />
                 ))}
                 <Button 

@@ -9,6 +9,8 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useMealPlan } from "@/hooks/useMealPlan";
 import { useWorkoutProgram } from "@/hooks/useWorkoutProgram";
+import { useStreak } from "@/hooks/useStreak";
+import { useWaterIntake } from "@/hooks/useWaterIntake";
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -19,8 +21,10 @@ export default function Index() {
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
   const { toast } = useToast();
-  const { mealPlan, isLoading: mealsLoading } = useMealPlan();
+  const { mealPlan, isLoading: mealsLoading, toggleMealComplete, refetch: refetchMeals } = useMealPlan();
   const { program, isLoading: workoutsLoading } = useWorkoutProgram();
+  const { currentStreak, isLoading: streakLoading } = useStreak();
+  const { glasses, liters, targetLiters, addWater } = useWaterIntake();
   const [profile, setProfile] = useState<{ full_name?: string; daily_calorie_target?: number } | null>(null);
 
   useEffect(() => {
@@ -39,17 +43,19 @@ export default function Index() {
   const today = new Date().getDay();
   const todayWorkout = program?.workouts.find(w => w.day_of_week === today);
 
-  // Calculate today's stats from meal plan
-  const consumedCalories = mealPlan?.total_calories || 0;
-  const consumedProtein = mealPlan?.total_protein || 0;
+  // Calculate today's stats from COMPLETED meals only
+  const completedMeals = mealPlan?.meals.filter(m => m.is_completed) || [];
+  const consumedCalories = completedMeals.reduce((sum, m) => sum + (m.calories || 0), 0);
+  const consumedProtein = completedMeals.reduce((sum, m) => sum + (m.protein || 0), 0);
+  
   const targetCalories = profile?.daily_calorie_target || 2000;
   const targetProtein = Math.round(targetCalories * 0.3 / 4); // 30% of calories from protein
 
   const todayStats = {
     calories: { consumed: consumedCalories, target: targetCalories },
     protein: { consumed: consumedProtein, target: targetProtein },
-    water: { consumed: 2.1, target: 3 }, // This would need its own tracking
-    streak: 7, // This would need calculation from progress_logs
+    water: { consumed: liters, target: targetLiters },
+    streak: currentStreak,
   };
 
   const calorieProgress = Math.min((todayStats.calories.consumed / todayStats.calories.target) * 100, 100);
@@ -74,6 +80,10 @@ export default function Index() {
     await signOut();
     toast({ title: "Logged out", description: "See you next time!" });
     navigate("/auth");
+  };
+
+  const handleMealToggle = async (mealId: string, completed: boolean) => {
+    await toggleMealComplete(mealId, completed);
   };
 
   return (
@@ -111,7 +121,10 @@ export default function Index() {
 
         {/* Quick Stats */}
         <div className="px-6 py-4">
-          <QuickStats {...todayStats} />
+          <QuickStats 
+            {...todayStats} 
+            onAddWater={addWater}
+          />
         </div>
 
         {/* AI Coach Prompt */}
@@ -150,12 +163,15 @@ export default function Index() {
               displayMeals.map((meal) => (
                 <MealCard
                   key={meal.id}
+                  id={meal.id}
                   type={meal.meal_type as "breakfast" | "lunch" | "dinner" | "snack"}
                   name={meal.name}
                   calories={meal.calories}
                   protein={meal.protein}
                   carbs={meal.carbs}
                   fats={meal.fats}
+                  isCompleted={meal.is_completed}
+                  onToggleComplete={(completed) => handleMealToggle(meal.id, completed)}
                 />
               ))
             ) : (
