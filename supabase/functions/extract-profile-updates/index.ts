@@ -14,6 +14,14 @@ interface ProfileUpdate {
   activity_level?: string;
   dietary_preference?: string;
   workouts_per_week?: number;
+  other_sports?: string[];
+  preferred_split?: string;
+  experience_level?: string;
+}
+
+interface WeeklyActivityUpdate {
+  activities?: string[];
+  notes?: string;
 }
 
 serve(async (req) => {
@@ -35,34 +43,53 @@ serve(async (req) => {
 
     console.log("Extract Profile Updates: Analyzing message for user", userId);
 
-    // Use AI to extract structured data from the user message
-    const extractionPrompt = `Analyze this user message and extract any fitness/nutrition profile updates. Return a JSON object with ONLY the fields that the user explicitly mentioned they want to change.
+    const extractionPrompt = `Analyze this user message and extract fitness/nutrition profile updates OR temporary weekly activity changes.
 
 User message: "${message}"
 
-Possible fields to extract:
-- allergies: array of allergens (e.g., ["peanuts", "shellfish", "dairy"])
-- disliked_foods: array of foods the user doesn't want (e.g., ["broccoli", "fish"])
-- fitness_goal: one of "lose_weight", "gain_muscle", "maintain", "general_health"
+====== PROFILE FIELDS (permanent changes) ======
+- allergies: array of allergens (e.g., ["peanuts", "shellfish"])
+- disliked_foods: array of foods user doesn't want (e.g., ["broccoli"])
+- fitness_goal: one of "lose_weight", "gain_muscle", "maintain", "general_health", "strength"
 - workout_location: one of "gym", "home", "outdoor"
-- activity_level: one of "sedentary", "lightly_active", "moderately_active", "very_active", "extremely_active"
+- activity_level: one of "sedentary", "lightly_active", "moderately_active", "very_active"
 - dietary_preference: one of "omnivore", "vegetarian", "vegan", "pescatarian", "keto", "paleo"
 - workouts_per_week: number from 1 to 7
+- other_sports: array of regular sports/activities (e.g., ["football", "running", "boxing"])
+- preferred_split: workout split preference - "push_pull_legs", "upper_lower", "full_body", "bro_split"
+- experience_level: "beginner", "intermediate", "advanced"
 
-RULES:
-1. ONLY include fields that the user explicitly mentioned
-2. If user says "I'm allergic to X", add X to allergies array
-3. If user says "I don't like X" or "I hate X", add X to disliked_foods
-4. If user mentions changing workout frequency, set workouts_per_week
-5. Return ONLY valid JSON, no markdown, no explanation
-6. If nothing relevant is found, return: {"hasUpdates": false}
-7. If updates found, return: {"hasUpdates": true, "updates": {...}}
+====== WEEKLY ACTIVITIES (temporary, this week only) ======
+- weekly_activities: activities happening THIS WEEK that affect training
+  Example: "I have a football match Saturday" → affects this week's leg volume
 
-Examples:
-- "I'm allergic to peanuts and shellfish" → {"hasUpdates": true, "updates": {"allergies": ["peanuts", "shellfish"]}}
-- "I hate broccoli" → {"hasUpdates": true, "updates": {"disliked_foods": ["broccoli"]}}
-- "I can only work out 3 days a week now" → {"hasUpdates": true, "updates": {"workouts_per_week": 3}}
-- "What's a good breakfast?" → {"hasUpdates": false}`;
+====== DETECTION RULES ======
+1. "I prefer Push/Pull/Legs" → preferred_split: "push_pull_legs"
+2. "I train one muscle per day" → preferred_split: "bro_split"
+3. "I play football every weekend" → other_sports: ["football"] (permanent)
+4. "I have a football match this week" → weekly_activities (temporary)
+5. "This plan is too intense" / "too hard" → reduce workouts_per_week by 1 or change experience to lower
+6. "I'm a beginner" → experience_level: "beginner"
+7. "I've been training for years" → experience_level: "advanced"
+8. "I also do boxing" → other_sports: ["boxing"]
+
+====== OUTPUT FORMAT ======
+Return ONLY valid JSON:
+{
+  "hasUpdates": true/false,
+  "updates": { ...profile fields... },
+  "weeklyActivities": { "activities": [...], "notes": "..." },
+  "needsWorkoutRegeneration": true/false,
+  "needsMealRegeneration": true/false
+}
+
+If nothing relevant found: {"hasUpdates": false}
+
+CRITICAL: 
+- Distinguish between PERMANENT preferences (other_sports) vs TEMPORARY this-week activities
+- preferred_split changes ALWAYS require workout regeneration
+- other_sports changes ALWAYS require workout regeneration
+- Output ONLY valid JSON, no markdown`;
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -119,18 +146,19 @@ Examples:
       });
     }
 
-    if (!extractionResult.hasUpdates || !extractionResult.updates) {
+    if (!extractionResult.hasUpdates) {
       return new Response(JSON.stringify({ hasUpdates: false }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const updates: ProfileUpdate = extractionResult.updates;
+    const updates: ProfileUpdate = extractionResult.updates || {};
+    const weeklyActivities: WeeklyActivityUpdate = extractionResult.weeklyActivities || {};
 
     // Fetch current profile to merge arrays
     const { data: currentProfile } = await supabase
       .from("profiles")
-      .select("allergies, disliked_foods")
+      .select("allergies, disliked_foods, other_sports")
       .eq("id", userId)
       .single();
 
@@ -138,27 +166,30 @@ Examples:
     const mergedUpdates: Record<string, any> = { ...updates };
     
     if (updates.allergies && currentProfile?.allergies) {
-      const combined = [...new Set([...currentProfile.allergies, ...updates.allergies])];
-      mergedUpdates.allergies = combined;
+      mergedUpdates.allergies = [...new Set([...currentProfile.allergies, ...updates.allergies])];
     }
     
     if (updates.disliked_foods && currentProfile?.disliked_foods) {
-      const combined = [...new Set([...currentProfile.disliked_foods, ...updates.disliked_foods])];
-      mergedUpdates.disliked_foods = combined;
+      mergedUpdates.disliked_foods = [...new Set([...currentProfile.disliked_foods, ...updates.disliked_foods])];
+    }
+    
+    if (updates.other_sports && currentProfile?.other_sports) {
+      mergedUpdates.other_sports = [...new Set([...currentProfile.other_sports, ...updates.other_sports])];
     }
 
-    // Update the profile
-    const { error: updateError } = await supabase
-      .from("profiles")
-      .update(mergedUpdates)
-      .eq("id", userId);
+    // Update the profile if there are updates
+    if (Object.keys(mergedUpdates).length > 0) {
+      const { error: updateError } = await supabase
+        .from("profiles")
+        .update(mergedUpdates)
+        .eq("id", userId);
 
-    if (updateError) {
-      console.error("Failed to update profile:", updateError);
-      throw new Error("Failed to update profile");
+      if (updateError) {
+        console.error("Failed to update profile:", updateError);
+        throw new Error("Failed to update profile");
+      }
+      console.log("Profile updated:", mergedUpdates);
     }
-
-    console.log("Profile updated successfully:", mergedUpdates);
 
     // Determine what needs regeneration
     const needsMealRegeneration = !!(
@@ -172,15 +203,20 @@ Examples:
       updates.fitness_goal ||
       updates.workout_location ||
       updates.activity_level ||
-      updates.workouts_per_week
+      updates.workouts_per_week ||
+      updates.other_sports ||
+      updates.preferred_split ||
+      updates.experience_level ||
+      (weeklyActivities.activities && weeklyActivities.activities.length > 0)
     );
 
     return new Response(JSON.stringify({
       hasUpdates: true,
       updates: mergedUpdates,
+      weeklyActivities,
       needsMealRegeneration,
       needsWorkoutRegeneration,
-      message: buildUpdateMessage(mergedUpdates),
+      message: buildUpdateMessage(mergedUpdates, weeklyActivities),
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
@@ -194,7 +230,7 @@ Examples:
   }
 });
 
-function buildUpdateMessage(updates: Record<string, any>): string {
+function buildUpdateMessage(updates: Record<string, any>, weeklyActivities: WeeklyActivityUpdate): string {
   const parts: string[] = [];
   
   if (updates.allergies) {
@@ -215,6 +251,18 @@ function buildUpdateMessage(updates: Record<string, any>): string {
   if (updates.dietary_preference) {
     parts.push(`diet to ${updates.dietary_preference}`);
   }
+  if (updates.preferred_split) {
+    parts.push(`training split to ${updates.preferred_split.replace(/_/g, " ")}`);
+  }
+  if (updates.other_sports) {
+    parts.push(`regular activities (${updates.other_sports.join(", ")})`);
+  }
+  if (updates.experience_level) {
+    parts.push(`experience level to ${updates.experience_level}`);
+  }
+  if (weeklyActivities.activities && weeklyActivities.activities.length > 0) {
+    parts.push(`this week's activities (${weeklyActivities.activities.join(", ")})`);
+  }
   
-  return parts.length > 0 ? `Updated your profile: ${parts.join(", ")}` : "";
+  return parts.length > 0 ? `Updated: ${parts.join(", ")}` : "";
 }

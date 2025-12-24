@@ -13,21 +13,7 @@ interface WorkoutCardProps {
 }
 
 const workoutTypeStyles: Record<string, { gradient: string; badge: string; label: string }> = {
-  strength: {
-    gradient: "from-orange-500/20 to-red-500/20",
-    badge: "bg-orange-500/20 text-orange-400",
-    label: "Strength",
-  },
-  cardio: {
-    gradient: "from-blue-500/20 to-cyan-500/20",
-    badge: "bg-blue-500/20 text-blue-400",
-    label: "Cardio",
-  },
-  flexibility: {
-    gradient: "from-purple-500/20 to-pink-500/20",
-    badge: "bg-purple-500/20 text-purple-400",
-    label: "Flexibility",
-  },
+  // Standard splits
   push: {
     gradient: "from-orange-500/20 to-amber-500/20",
     badge: "bg-orange-500/20 text-orange-400",
@@ -43,11 +29,28 @@ const workoutTypeStyles: Record<string, { gradient: string; badge: string; label
     badge: "bg-green-500/20 text-green-400",
     label: "Legs",
   },
-  rest: {
-    gradient: "from-gray-500/20 to-slate-500/20",
-    badge: "bg-gray-500/20 text-gray-400",
-    label: "Rest",
+  // Body part splits
+  chest: {
+    gradient: "from-red-500/20 to-rose-500/20",
+    badge: "bg-red-500/20 text-red-400",
+    label: "Chest",
   },
+  back: {
+    gradient: "from-blue-600/20 to-blue-400/20",
+    badge: "bg-blue-600/20 text-blue-400",
+    label: "Back",
+  },
+  shoulders: {
+    gradient: "from-amber-500/20 to-yellow-500/20",
+    badge: "bg-amber-500/20 text-amber-400",
+    label: "Shoulders",
+  },
+  arms: {
+    gradient: "from-pink-500/20 to-fuchsia-500/20",
+    badge: "bg-pink-500/20 text-pink-400",
+    label: "Arms",
+  },
+  // Upper/Lower
   upper: {
     gradient: "from-red-500/20 to-orange-500/20",
     badge: "bg-red-500/20 text-red-400",
@@ -58,10 +61,32 @@ const workoutTypeStyles: Record<string, { gradient: string; badge: string; label
     badge: "bg-teal-500/20 text-teal-400",
     label: "Lower Body",
   },
+  // Full body
   full_body: {
     gradient: "from-purple-500/20 to-violet-500/20",
     badge: "bg-purple-500/20 text-purple-400",
     label: "Full Body",
+  },
+  // Generic types
+  strength: {
+    gradient: "from-orange-500/20 to-red-500/20",
+    badge: "bg-orange-500/20 text-orange-400",
+    label: "Strength",
+  },
+  cardio: {
+    gradient: "from-cyan-500/20 to-blue-500/20",
+    badge: "bg-cyan-500/20 text-cyan-400",
+    label: "Cardio",
+  },
+  flexibility: {
+    gradient: "from-purple-500/20 to-pink-500/20",
+    badge: "bg-purple-500/20 text-purple-400",
+    label: "Flexibility",
+  },
+  rest: {
+    gradient: "from-gray-500/20 to-slate-500/20",
+    badge: "bg-gray-500/20 text-gray-400",
+    label: "Rest Day",
   },
 };
 

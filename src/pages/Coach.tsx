@@ -26,15 +26,22 @@ interface UserProfile {
   weight_goal: number | null;
   height_cm: number | null;
   age: number | null;
+  other_sports: string[] | null;
+  preferred_split: string | null;
 }
 
-const SUGGESTIONS = ["What should I eat for dinner?", "How can I hit my protein goals?", "Suggest a quick workout", "Tips for better sleep"];
+const SUGGESTIONS = [
+  "What should I eat for dinner?",
+  "I prefer Push/Pull/Legs split",
+  "I have a football match this week",
+  "This workout plan is too intense"
+];
 export default function Coach() {
   const { user } = useAuth();
   const { checkForProfileUpdates, triggerRegeneration } = useProfileUpdates();
   const [messages, setMessages] = useState<Message[]>([{
     role: "assistant",
-    content: "Hey! 👋 I'm your AI fitness coach. Ask me anything about nutrition, workouts, or your fitness goals. You can also tell me about any allergies, food preferences, or schedule changes - I'll update your profile automatically!"
+    content: "Hey! I'm your AI fitness coach. Ask me anything about nutrition, workouts, or your fitness goals.\n\nYou can also tell me things like:\n• \"I prefer Push/Pull/Legs\"\n• \"I also play football\"\n• \"This plan is too intense\"\n• \"I have a match this Saturday\"\n\nI'll update your plans automatically!"
   }]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -47,10 +54,10 @@ export default function Coach() {
       if (!user) return;
       const { data } = await supabase
         .from("profiles")
-        .select("fitness_goal, experience_level, workout_location, dietary_preference, allergies, disliked_foods, daily_calorie_target, weight_current, weight_goal, height_cm, age")
+        .select("*")
         .eq("id", user.id)
         .single();
-      if (data) setProfile(data);
+      if (data) setProfile(data as unknown as UserProfile);
     };
     fetchProfile();
   }, [user]);
@@ -78,10 +85,10 @@ export default function Coach() {
         // Refetch profile to get updated data
         const { data } = await supabase
           .from("profiles")
-          .select("fitness_goal, experience_level, workout_location, dietary_preference, allergies, disliked_foods, daily_calorie_target, weight_current, weight_goal, height_cm, age")
+          .select("*")
           .eq("id", user.id)
           .single();
-        if (data) setProfile(data);
+        if (data) setProfile(data as unknown as UserProfile);
         
         // Trigger regeneration if needed
         if (result.needsMealRegeneration || result.needsWorkoutRegeneration) {

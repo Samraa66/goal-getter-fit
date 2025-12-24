@@ -5,213 +5,167 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Standard workout types that users understand
+const WORKOUT_TYPES = {
+  PUSH: "push",
+  PULL: "pull", 
+  LEGS: "legs",
+  CHEST: "chest",
+  BACK: "back",
+  SHOULDERS: "shoulders",
+  ARMS: "arms",
+  UPPER: "upper",
+  LOWER: "lower",
+  FULL_BODY: "full_body",
+  CARDIO: "cardio",
+  REST: "rest",
+};
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const { profile } = await req.json();
+    const { profile, weeklyActivities } = await req.json();
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
 
     if (!LOVABLE_API_KEY) {
       throw new Error("LOVABLE_API_KEY is not configured");
     }
 
-    console.log("Generate Workout Program: Creating program for user");
+    console.log("Generate Workout Program: Creating personalized program");
 
+    // ===== USER PROFILE DATA =====
+    const age = profile.age || 30;
+    const heightCm = profile.height_cm || 170;
+    const weightKg = profile.weight_current || 70;
+    const goalWeightKg = profile.weight_goal || weightKg;
+    const gender = profile.gender || 'not_specified';
     const experienceLevel = profile.experience_level || 'beginner';
     const fitnessGoal = profile.fitness_goal || 'general_fitness';
     const workoutLocation = profile.workout_location || 'gym';
     const availableTime = profile.available_time_minutes || 60;
     const otherSports = profile.other_sports || [];
     const activityLevel = profile.activity_level || 'moderately_active';
-    const workoutsPerWeek = profile.workouts_per_week || 3;
+    const workoutsPerWeek = Math.min(profile.workouts_per_week || 3, 6);
+    const preferredSplit = profile.preferred_split || null; // User can set via Coach AI
     
-    // Determine training split based on experience and other activities
-    let trainingSplit = "Full Body (3x/week)";
-    let daysPerWeek = workoutsPerWeek;
-    let setsPerMuscle = "10-12";
+    // ===== CALCULATE TRAINING PARAMETERS =====
     
-    // Reduce gym workouts if user does other sports
-    const hasCardioSports = otherSports.some((s: string) => ['running', 'cycling', 'swimming', 'football', 'basketball', 'tennis', 'hiking'].includes(s));
-    const hasLegIntenseSports = otherSports.some((s: string) => ['running', 'cycling', 'football', 'basketball', 'hiking', 'martial_arts'].includes(s));
+    // Base volume adjustment by experience
+    const volumeMap: Record<string, number> = {
+      beginner: 0.6,
+      intermediate: 1.0,
+      advanced: 1.3,
+    };
+    const volumeMultiplier = volumeMap[experienceLevel] || 0.8;
     
-    if (experienceLevel === 'intermediate') {
-      trainingSplit = "Push/Pull/Legs (3-4x/week)";
-      daysPerWeek = Math.min(workoutsPerWeek, hasCardioSports ? 3 : 4);
-      setsPerMuscle = "12-16";
-    } else if (experienceLevel === 'advanced') {
-      trainingSplit = "Push/Pull/Legs (4-6x/week)";
-      daysPerWeek = Math.min(workoutsPerWeek, hasCardioSports ? 4 : 6);
-      setsPerMuscle = "16-20";
-    }
+    // Intensity adjustment by body weight and gender
+    const baseIntensity = gender === 'female' ? 0.85 : 1.0;
+    const weightFactor = weightKg < 60 ? 0.8 : weightKg > 90 ? 1.15 : 1.0;
+    const intensityMultiplier = baseIntensity * weightFactor * volumeMultiplier;
+    
+    // Sets per muscle group per week (evidence-based hypertrophy)
+    const baseSetsPerMuscle = experienceLevel === 'beginner' ? 8 
+      : experienceLevel === 'intermediate' ? 12 
+      : 16;
+    
+    // ===== SPORT-SPECIFIC ADJUSTMENTS =====
+    const sportsImpact = analyzeSportsImpact(otherSports, weeklyActivities);
+    
+    // ===== DETERMINE TRAINING SPLIT =====
+    const { split, daysPerWeek, workoutStructure } = determineTrainingSplit(
+      experienceLevel,
+      workoutsPerWeek,
+      preferredSplit,
+      sportsImpact
+    );
+    
+    console.log(`Selected split: ${split}, ${daysPerWeek} days/week`);
+    console.log(`Sports impact:`, sportsImpact);
 
-    // Sports-specific adjustment guidance
-    let sportsGuidance = "";
-    if (otherSports.length > 0) {
-      sportsGuidance = `
-OTHER ACTIVITIES USER DOES: ${otherSports.join(", ")}
-
-CRITICAL SPORT-SPECIFIC ADJUSTMENTS:
-${hasLegIntenseSports ? `- User does leg-intensive sports (${otherSports.filter((s: string) => ['running', 'cycling', 'football', 'basketball', 'hiking', 'martial_arts'].includes(s)).join(', ')}). REDUCE leg workout volume by 30-40%. Avoid heavy leg days before/after sport days.` : ''}
-${hasCardioSports ? `- User gets cardio from sports. SKIP separate cardio sessions in the gym program.` : ''}
-- Schedule REST days around sport activities
-- Prioritize upper body work if legs are taxed from sports
-- Include extra mobility/recovery work for sport-specific muscles
-- Consider this an HYBRID athlete, not pure gym trainee`;
-    }
-
-    // Adjust for goal
-    let goalSpecificGuidance = "";
-    if (fitnessGoal === 'fat_loss' || fitnessGoal === 'lose_weight') {
-      goalSpecificGuidance = `
-FAT LOSS SPECIFIC:
-- Include 2-3 cardio sessions (HIIT or steady-state)
-- Shorter rest periods (45-60 seconds)
-- Higher rep ranges (12-15) for metabolic stress
-- Superset exercises when possible
-- Add finisher circuits at end of workouts`;
-    } else if (fitnessGoal === 'muscle_gain' || fitnessGoal === 'build_muscle') {
-      goalSpecificGuidance = `
-MUSCLE GAIN SPECIFIC:
-- Focus on progressive overload
-- Longer rest periods (90-180 seconds) for strength exercises
-- Mix of rep ranges: 6-8 (strength), 8-12 (hypertrophy), 12-15 (metabolic)
-- Prioritize compound movements
-- Include isolation work for lagging muscles`;
-    } else if (fitnessGoal === 'strength') {
-      goalSpecificGuidance = `
-STRENGTH SPECIFIC:
-- Lower rep ranges (3-6) for main lifts
-- Long rest periods (3-5 minutes) between heavy sets
-- Focus on Squat, Bench, Deadlift, Overhead Press
-- Accessory work to support main lifts
-- RIR of 1-2 on main lifts`;
-    }
-
-    const equipmentGuidance = workoutLocation === 'home' 
-      ? `
-HOME WORKOUT EQUIPMENT:
-- Assume: bodyweight, resistance bands, possibly dumbbells
-- Substitute barbell movements with dumbbell or bodyweight alternatives
-- Include floor exercises, push-up variations, lunges, squats
-- Use furniture for dips, rows, elevated push-ups if needed`
-      : `
-GYM EQUIPMENT AVAILABLE:
-- Full access to barbells, dumbbells, cable machines, machines
-- Include compound barbell movements (squat, deadlift, bench, row)
-- Use machines for isolation and safety
-- Cable exercises for constant tension`;
-
-    const systemPrompt = `You are an elite strength & conditioning coach and certified personal trainer (CSCS, NSCA-CPT). Generate an evidence-based, periodized weekly workout program.
+    // ===== BUILD AI PROMPT =====
+    const systemPrompt = `You are an elite strength & conditioning coach. Generate a practical, gym-culture-aligned workout program.
 
 ====== USER PROFILE ======
-- Age: ${profile.age || 30} years
-- Height: ${profile.height_cm || 170} cm
-- Current Weight: ${profile.weight_current || 70} kg
-- Goal Weight: ${profile.weight_goal || profile.weight_current || 70} kg
-- Experience Level: ${experienceLevel}
-- Fitness Goal: ${fitnessGoal}
-- Workout Location: ${workoutLocation}
-- Available Time: ${availableTime} minutes per session
-- Injuries/Limitations: ${profile.injuries || 'none reported'}
+- Age: ${age} years
+- Gender: ${gender}
+- Height: ${heightCm} cm  
+- Weight: ${weightKg} kg (Goal: ${goalWeightKg} kg)
+- Experience: ${experienceLevel.toUpperCase()}
+- Goal: ${fitnessGoal}
+- Location: ${workoutLocation}
+- Time per session: ${availableTime} minutes
+- Activity level: ${activityLevel}
 
-====== PROGRAM DESIGN PRINCIPLES ======
-Recommended Split: ${trainingSplit}
-Weekly Sets Per Muscle Group: ${setsPerMuscle} sets (evidence-based hypertrophy range)
-User Activity Level: ${activityLevel}
-${sportsGuidance}
-${goalSpecificGuidance}
-${equipmentGuidance}
+====== CALCULATED PARAMETERS ======
+- Training Split: ${split}
+- Days per week: ${daysPerWeek}
+- Intensity multiplier: ${intensityMultiplier.toFixed(2)} (affects weight/volume)
+- Base sets per muscle: ${baseSetsPerMuscle} sets/week
+- Volume adjusted for experience: ${Math.round(baseSetsPerMuscle * volumeMultiplier)} sets/week
 
-====== SCIENTIFIC GUIDELINES ======
-1. PROGRESSIVE OVERLOAD: Each week should allow for progression (weight, reps, or sets)
-2. VOLUME: ${setsPerMuscle} weekly sets per major muscle group
-3. FREQUENCY: Each muscle 2-3x per week for optimal protein synthesis
-4. INTENSITY: Use RIR (Reps In Reserve) to prescribe intensity
-   - RIR 3-4: Warm-up/technique work
-   - RIR 2-3: Hypertrophy focus
-   - RIR 1-2: Strength focus
-   - RIR 0-1: Max effort (use sparingly)
-5. REST PERIODS:
-   - Compound strength: 2-3 minutes
-   - Hypertrophy: 60-90 seconds
-   - Isolation: 45-60 seconds
-6. EXERCISE ORDER: Compound → Isolation, Large → Small muscle groups
-7. WARM-UP: Include 5-10 min cardio + dynamic stretching before each workout
+====== TRAINING SPLIT STRUCTURE ======
+${workoutStructure}
 
-====== WORKOUT STRUCTURE ======
-For ${experienceLevel} level, generate a ${daysPerWeek}-day program:
-${experienceLevel === 'beginner' ? `
-- Day 1: Full Body A
-- Day 2: Rest
-- Day 3: Full Body B
-- Day 4: Rest
-- Day 5: Full Body C
-- Day 6-7: Rest/Active Recovery` : ''}
-${experienceLevel === 'intermediate' ? `
-- Day 1: Push (Chest, Shoulders, Triceps)
-- Day 2: Pull (Back, Biceps, Rear Delts)
-- Day 3: Legs (Quads, Hamstrings, Glutes, Calves)
-- Day 4: Rest
-- Day 5: Push or Pull (rotating)
-- Day 6-7: Rest/Active Recovery` : ''}
-${experienceLevel === 'advanced' ? `
-- Day 1: Push (Chest, Shoulders, Triceps)
-- Day 2: Pull (Back, Biceps, Rear Delts)
-- Day 3: Legs (Quads, Hamstrings, Glutes, Calves)
-- Day 4: Push (Volume focus)
-- Day 5: Pull (Volume focus)
-- Day 6: Legs (Volume focus)
-- Day 7: Rest/Active Recovery` : ''}
+====== SPORTS & WEEKLY ACTIVITIES ======
+${sportsImpact.guidance}
 
-====== EXERCISE REQUIREMENTS ======
-Each workout must include:
-- ${experienceLevel === 'beginner' ? '4-6' : experienceLevel === 'intermediate' ? '5-7' : '6-8'} exercises
-- Clear exercise names (use common names)
-- Sets: 3-5 per exercise
-- Reps: appropriate for goal (strength: 3-6, hypertrophy: 8-12, endurance: 12-15)
-- RIR prescription for intensity
-- Rest periods in seconds
-- Brief notes for form cues or variations
+====== CRITICAL RULES ======
+1. USE STANDARD WORKOUT NAMES:
+   - "Push" (Chest, Shoulders, Triceps)
+   - "Pull" (Back, Biceps, Rear Delts)
+   - "Legs" (Quads, Hamstrings, Glutes, Calves)
+   - "Chest", "Back", "Shoulders", "Arms" for bro splits
+   - "Upper Body", "Lower Body" for upper/lower splits
+   - NEVER use "Full Body A/B/C" or confusing labels
 
-====== OUTPUT FORMAT (STRICT JSON, NO MARKDOWN) ======
+2. ADJUST VOLUME FOR USER:
+   - Beginner (${weightKg < 70 ? 'lighter' : 'standard'} weight): ${Math.round(baseSetsPerMuscle * 0.6)} sets/muscle, 3-4 exercises/workout
+   - Intermediate: ${Math.round(baseSetsPerMuscle * 1.0)} sets/muscle, 5-6 exercises/workout  
+   - Advanced: ${Math.round(baseSetsPerMuscle * 1.3)} sets/muscle, 6-8 exercises/workout
+
+3. ${gender === 'female' ? 'FEMALE-SPECIFIC: Focus on glutes, legs, and functional movements. Slightly lower upper body volume. Include hip thrusts, RDLs, glute bridges.' : 'MALE-SPECIFIC: Balanced upper/lower. Include bench, rows, squats, deadlifts.'}
+
+4. ${sportsImpact.hasLegSports ? 'REDUCE LEG VOLUME by 30-40% due to leg-intensive sports.' : ''}
+${sportsImpact.hasArmSports ? 'REDUCE PUSHING VOLUME by 20-30% due to arm-intensive sports (boxing, climbing).' : ''}
+${sportsImpact.hasCardioSports ? 'SKIP SEPARATE CARDIO - user gets it from sports.' : ''}
+
+5. INTENSITY BY WEIGHT CLASS:
+   - Light (<60kg): Conservative weights, focus on form, more reps (10-15)
+   - Medium (60-90kg): Standard progression, mixed reps (8-12)
+   - Heavy (>90kg): Can handle more volume, lower reps for compounds (6-10)
+
+====== OUTPUT FORMAT (STRICT JSON) ======
 {
-  "program_name": "Week 1: ${fitnessGoal} - ${trainingSplit}",
-  "program_description": "Brief description of the program focus and expected outcomes",
-  "training_split": "${trainingSplit}",
+  "program_name": "${split} - ${fitnessGoal.replace(/_/g, ' ')}",
+  "program_description": "Brief 1-2 sentence description",
+  "training_split": "${split}",
   "days_per_week": ${daysPerWeek},
   "workouts": [
     {
-      "day_of_week": 0,
-      "name": "Workout Name",
-      "workout_type": "strength",
-      "focus": "Push/Pull/Legs/Full Body/Upper/Lower",
+      "day_of_week": 1,
+      "name": "Push",
+      "workout_type": "push",
       "duration_minutes": ${availableTime},
-      "warm_up": "5 min light cardio, arm circles, leg swings, hip circles",
       "exercises": [
         {
-          "name": "Exercise Name",
+          "name": "Bench Press",
           "sets": 4,
           "reps": "8-10",
-          "rir": 2,
           "rest_seconds": 90,
-          "equipment": "barbell/dumbbell/bodyweight/cable/machine",
-          "notes": "Form cue or variation note"
+          "notes": "Control the descent"
         }
-      ],
-      "cool_down": "5 min stretching, foam rolling"
+      ]
     }
   ]
 }
 
-CRITICAL RULES:
-1. day_of_week: 0=Sunday, 1=Monday, ..., 6=Saturday
-2. workout_type: "strength", "cardio", "flexibility", or "rest"
-3. All rest days should have workout_type "rest" with minimal/no exercises
-4. Fit TOTAL workout time (warm-up + exercises + rest + cool-down) within ${availableTime} minutes
-5. Output ONLY valid JSON. No markdown, no explanations, no code blocks.`;
+workout_type MUST be one of: "push", "pull", "legs", "chest", "back", "shoulders", "arms", "upper", "lower", "full_body", "cardio", "rest"
+day_of_week: 0=Sunday, 1=Monday, ..., 6=Saturday
+
+Output ONLY valid JSON. No markdown, no code blocks, no explanation.`;
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -223,7 +177,7 @@ CRITICAL RULES:
         model: "google/gemini-2.5-flash",
         messages: [
           { role: "system", content: systemPrompt },
-          { role: "user", content: "Generate a complete weekly workout program. Output ONLY valid JSON." },
+          { role: "user", content: `Generate a ${daysPerWeek}-day ${split} workout program. Output ONLY valid JSON.` },
         ],
       }),
     });
@@ -250,27 +204,31 @@ CRITICAL RULES:
     const data = await response.json();
     const content = data.choices?.[0]?.message?.content;
     
-    console.log("AI Response:", content);
+    console.log("AI Response received, parsing...");
 
-    // Parse the JSON response
+    // Parse JSON response
     let workoutProgram;
     try {
       let cleanContent = content.trim();
-      if (cleanContent.startsWith("```json")) {
-        cleanContent = cleanContent.slice(7);
-      } else if (cleanContent.startsWith("```")) {
-        cleanContent = cleanContent.slice(3);
-      }
-      if (cleanContent.endsWith("```")) {
-        cleanContent = cleanContent.slice(0, -3);
-      }
+      if (cleanContent.startsWith("```json")) cleanContent = cleanContent.slice(7);
+      else if (cleanContent.startsWith("```")) cleanContent = cleanContent.slice(3);
+      if (cleanContent.endsWith("```")) cleanContent = cleanContent.slice(0, -3);
       workoutProgram = JSON.parse(cleanContent.trim());
     } catch (parseError) {
       console.error("Failed to parse AI response:", parseError);
+      console.error("Raw content:", content);
       throw new Error("Failed to generate valid workout program");
     }
 
-    console.log("Generate Workout Program: Success, returning", workoutProgram.workouts?.length, "workouts");
+    // Normalize workout types to ensure consistency
+    if (workoutProgram.workouts) {
+      workoutProgram.workouts = workoutProgram.workouts.map((workout: any) => ({
+        ...workout,
+        workout_type: normalizeWorkoutType(workout.workout_type || workout.name),
+      }));
+    }
+
+    console.log("Generate Workout Program: Success -", workoutProgram.workouts?.length, "workouts");
 
     return new Response(JSON.stringify(workoutProgram), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -284,3 +242,222 @@ CRITICAL RULES:
     });
   }
 });
+
+// ===== HELPER FUNCTIONS =====
+
+function analyzeSportsImpact(otherSports: string[], weeklyActivities?: any) {
+  const allActivities = [...otherSports, ...(weeklyActivities?.activities || [])];
+  
+  const legIntenseSports = ['running', 'cycling', 'football', 'soccer', 'basketball', 'hiking', 'skiing', 'skating', 'martial_arts', 'kickboxing'];
+  const armIntenseSports = ['boxing', 'climbing', 'swimming', 'tennis', 'volleyball', 'rock_climbing'];
+  const cardioSports = ['running', 'cycling', 'swimming', 'football', 'basketball', 'tennis', 'hiking'];
+  
+  const hasLegSports = allActivities.some(s => legIntenseSports.includes(s.toLowerCase()));
+  const hasArmSports = allActivities.some(s => armIntenseSports.includes(s.toLowerCase()));
+  const hasCardioSports = allActivities.some(s => cardioSports.includes(s.toLowerCase()));
+  
+  let guidance = "";
+  if (allActivities.length === 0) {
+    guidance = "No other sports reported. Full gym program recommended.";
+  } else {
+    guidance = `User also does: ${allActivities.join(", ")}\n`;
+    if (hasLegSports) guidance += "- REDUCE leg workout volume to prevent overtraining\n";
+    if (hasArmSports) guidance += "- REDUCE pushing/pulling volume for arm recovery\n";
+    if (hasCardioSports) guidance += "- SKIP cardio sessions - sports provide sufficient conditioning\n";
+    guidance += "- Schedule gym sessions to avoid back-to-back with sport activities";
+  }
+  
+  return { hasLegSports, hasArmSports, hasCardioSports, guidance };
+}
+
+function determineTrainingSplit(
+  experience: string,
+  requestedDays: number,
+  preferredSplit: string | null,
+  sportsImpact: any
+) {
+  // If user explicitly chose a split via Coach AI, respect it
+  if (preferredSplit) {
+    return buildSplitFromPreference(preferredSplit, requestedDays);
+  }
+  
+  // Default logic based on experience and availability
+  if (experience === 'beginner') {
+    // Beginners: Full Body 2-3x/week OR Push/Pull/Legs light
+    if (requestedDays <= 3) {
+      return {
+        split: "Full Body",
+        daysPerWeek: Math.min(requestedDays, 3),
+        workoutStructure: `
+Day 1 (Mon): Full Body - Focus on compound movements
+Day 2 (Wed): Full Body - Slightly different exercise selection  
+Day 3 (Fri): Full Body - Light/technique focus
+- Keep exercises simple: Squat, Bench, Row, Deadlift variations
+- 3-4 sets per exercise, 10-12 reps
+- Full body ensures each muscle trained 3x/week for beginners`
+      };
+    } else {
+      return {
+        split: "Push/Pull/Legs",
+        daysPerWeek: Math.min(requestedDays, 4),
+        workoutStructure: `
+Day 1 (Mon): Push - Chest, Shoulders, Triceps
+Day 2 (Tue): Pull - Back, Biceps
+Day 3 (Thu): Legs - Quads, Hamstrings, Glutes
+Day 4 (Sat): Optional Upper Body light session
+- 4-5 exercises per session for beginner
+- Focus on learning proper form`
+      };
+    }
+  }
+  
+  if (experience === 'intermediate') {
+    // Intermediate: Classic Push/Pull/Legs
+    const adjustedDays = sportsImpact.hasCardioSports ? Math.min(requestedDays, 4) : requestedDays;
+    
+    if (adjustedDays <= 3) {
+      return {
+        split: "Push/Pull/Legs",
+        daysPerWeek: 3,
+        workoutStructure: `
+Day 1 (Mon): Push - Chest, Shoulders, Triceps (5-6 exercises)
+Day 2 (Wed): Pull - Back, Biceps, Rear Delts (5-6 exercises)
+Day 3 (Fri): Legs - Quads, Hamstrings, Glutes, Calves (5-6 exercises)
+- Each muscle hit 1x/week with sufficient volume
+- Focus on progressive overload week-to-week`
+      };
+    } else if (adjustedDays <= 5) {
+      return {
+        split: "Push/Pull/Legs",
+        daysPerWeek: adjustedDays,
+        workoutStructure: `
+Day 1 (Mon): Push - Heavy emphasis
+Day 2 (Tue): Pull - Heavy emphasis
+Day 3 (Wed): Legs  
+Day 4 (Thu): Rest
+Day 5 (Fri): Push/Pull combo or weak point focus
+- Each muscle hit 1.5-2x/week
+- Rotate emphasis between strength and hypertrophy`
+      };
+    } else {
+      return {
+        split: "Push/Pull/Legs",
+        daysPerWeek: 6,
+        workoutStructure: `
+Day 1 (Mon): Push - Strength focus
+Day 2 (Tue): Pull - Strength focus
+Day 3 (Wed): Legs - Strength focus
+Day 4 (Thu): Push - Hypertrophy focus
+Day 5 (Fri): Pull - Hypertrophy focus  
+Day 6 (Sat): Legs - Hypertrophy focus
+Day 7 (Sun): Rest
+- Each muscle hit 2x/week with varied rep ranges`
+      };
+    }
+  }
+  
+  // Advanced: PPL or Bro Split based on days
+  if (requestedDays >= 5) {
+    return {
+      split: "Push/Pull/Legs",
+      daysPerWeek: Math.min(requestedDays, 6),
+      workoutStructure: `
+Day 1: Push - Heavy compounds + isolation
+Day 2: Pull - Heavy compounds + isolation
+Day 3: Legs - Quad focus
+Day 4: Push - Volume/pump focus
+Day 5: Pull - Volume/pump focus
+Day 6: Legs - Hamstring/Glute focus
+- High volume, high frequency for advanced gains
+- Include intensity techniques: drop sets, rest-pause`
+    };
+  } else {
+    return {
+      split: "Upper/Lower",
+      daysPerWeek: 4,
+      workoutStructure: `
+Day 1 (Mon): Upper Body - Push emphasis
+Day 2 (Tue): Lower Body - Quad emphasis
+Day 3 (Thu): Upper Body - Pull emphasis
+Day 4 (Fri): Lower Body - Posterior chain emphasis
+- Great frequency for intermediate-advanced
+- Balances volume and recovery`
+    };
+  }
+}
+
+function buildSplitFromPreference(preferredSplit: string, days: number) {
+  const normalized = preferredSplit.toLowerCase().replace(/[\/\s-]+/g, '_');
+  
+  if (normalized.includes('push') && normalized.includes('pull')) {
+    return {
+      split: "Push/Pull/Legs",
+      daysPerWeek: Math.min(days, 6),
+      workoutStructure: "User preference: Push/Pull/Legs split"
+    };
+  }
+  
+  if (normalized.includes('upper') && normalized.includes('lower')) {
+    return {
+      split: "Upper/Lower", 
+      daysPerWeek: Math.min(days, 4),
+      workoutStructure: "User preference: Upper/Lower split"
+    };
+  }
+  
+  if (normalized.includes('bro') || normalized.includes('body_part')) {
+    return {
+      split: "Body Part Split",
+      daysPerWeek: Math.min(days, 5),
+      workoutStructure: "User preference: One muscle group per day"
+    };
+  }
+  
+  if (normalized.includes('full')) {
+    return {
+      split: "Full Body",
+      daysPerWeek: Math.min(days, 3),
+      workoutStructure: "User preference: Full body workouts"
+    };
+  }
+  
+  // Default to PPL
+  return {
+    split: "Push/Pull/Legs",
+    daysPerWeek: Math.min(days, 6),
+    workoutStructure: "Default: Push/Pull/Legs split"
+  };
+}
+
+function normalizeWorkoutType(type: string): string {
+  const normalized = type.toLowerCase().replace(/[\s-]+/g, '_');
+  
+  // Map common variations to standard types
+  const typeMap: Record<string, string> = {
+    'push': 'push',
+    'pushing': 'push',
+    'chest_shoulders_triceps': 'push',
+    'pull': 'pull',
+    'pulling': 'pull',
+    'back_biceps': 'pull',
+    'legs': 'legs',
+    'leg': 'legs',
+    'lower_body': 'lower',
+    'lower': 'lower',
+    'upper_body': 'upper',
+    'upper': 'upper',
+    'full_body': 'full_body',
+    'full': 'full_body',
+    'chest': 'chest',
+    'back': 'back',
+    'shoulders': 'shoulders',
+    'arms': 'arms',
+    'cardio': 'cardio',
+    'rest': 'rest',
+    'recovery': 'rest',
+    'strength': 'strength',
+    'flexibility': 'flexibility',
+  };
+  
+  return typeMap[normalized] || 'strength';
+}
