@@ -24,7 +24,7 @@ export default function Index() {
   const { mealPlan, isLoading: mealsLoading, toggleMealComplete, refetch: refetchMeals } = useMealPlan();
   const { program, isLoading: workoutsLoading } = useWorkoutProgram();
   const { currentStreak, isLoading: streakLoading } = useStreak();
-  const { glasses, liters, targetLiters, addWater } = useWaterIntake();
+  const { glasses, liters, targetLiters, addWater, isLoading: waterLoading } = useWaterIntake();
   const [profile, setProfile] = useState<{ full_name?: string; daily_calorie_target?: number } | null>(null);
 
   useEffect(() => {
@@ -123,7 +123,7 @@ export default function Index() {
         <div className="px-6 py-4">
           <QuickStats 
             {...todayStats} 
-            onAddWater={addWater}
+            onAddWater={() => addWater(1)}
           />
         </div>
 

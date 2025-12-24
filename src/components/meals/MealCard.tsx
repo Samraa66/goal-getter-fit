@@ -144,15 +144,15 @@ export function MealCard({
         <div className="mt-4 grid grid-cols-3 gap-2 text-center">
           <div className="rounded-lg bg-secondary/50 px-2 py-1.5">
             <p className="text-xs text-muted-foreground">Protein</p>
-            <p className="text-sm font-medium text-foreground">{protein}g</p>
+            <p className="text-sm font-bold text-primary">{protein}g</p>
           </div>
           <div className="rounded-lg bg-secondary/50 px-2 py-1.5">
             <p className="text-xs text-muted-foreground">Carbs</p>
-            <p className="text-sm font-medium text-foreground">{carbs}g</p>
+            <p className="text-sm font-bold text-foreground">{carbs}g</p>
           </div>
           <div className="rounded-lg bg-secondary/50 px-2 py-1.5">
             <p className="text-xs text-muted-foreground">Fats</p>
-            <p className="text-sm font-medium text-foreground">{fats}g</p>
+            <p className="text-sm font-bold text-foreground">{fats}g</p>
           </div>
         </div>
 

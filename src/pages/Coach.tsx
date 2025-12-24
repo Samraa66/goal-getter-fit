@@ -7,6 +7,7 @@ import { Send, Sparkles } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
+import { useProfileUpdates } from "@/hooks/useProfileUpdates";
 
 interface Message {
   role: "user" | "assistant";
@@ -30,9 +31,10 @@ interface UserProfile {
 const SUGGESTIONS = ["What should I eat for dinner?", "How can I hit my protein goals?", "Suggest a quick workout", "Tips for better sleep"];
 export default function Coach() {
   const { user } = useAuth();
+  const { checkForProfileUpdates, triggerRegeneration } = useProfileUpdates();
   const [messages, setMessages] = useState<Message[]>([{
     role: "assistant",
-    content: "Hey! 👋 I'm your AI fitness coach. Ask me anything about nutrition, workouts, or your fitness goals. How can I help you today?"
+    content: "Hey! 👋 I'm your AI fitness coach. Ask me anything about nutrition, workouts, or your fitness goals. You can also tell me about any allergies, food preferences, or schedule changes - I'll update your profile automatically!"
   }]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -61,7 +63,7 @@ export default function Coach() {
     scrollToBottom();
   }, [messages]);
   const sendMessage = async (messageText: string) => {
-    if (!messageText.trim() || isLoading) return;
+    if (!messageText.trim() || isLoading || !user) return;
     const userMessage: Message = {
       role: "user",
       content: messageText
@@ -69,6 +71,29 @@ export default function Coach() {
     setMessages(prev => [...prev, userMessage]);
     setInput("");
     setIsLoading(true);
+    
+    // Check for profile updates in the background
+    checkForProfileUpdates(messageText, user.id).then(async (result) => {
+      if (result.hasUpdates) {
+        // Refetch profile to get updated data
+        const { data } = await supabase
+          .from("profiles")
+          .select("fitness_goal, experience_level, workout_location, dietary_preference, allergies, disliked_foods, daily_calorie_target, weight_current, weight_goal, height_cm, age")
+          .eq("id", user.id)
+          .single();
+        if (data) setProfile(data);
+        
+        // Trigger regeneration if needed
+        if (result.needsMealRegeneration || result.needsWorkoutRegeneration) {
+          await triggerRegeneration(
+            user.id,
+            result.needsMealRegeneration || false,
+            result.needsWorkoutRegeneration || false
+          );
+        }
+      }
+    });
+    
     try {
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-coach`, {
         method: "POST",
