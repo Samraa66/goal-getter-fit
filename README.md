@@ -1,8 +1,8 @@
-# Welcome to your Lovable project
+# Forme — Adaptive coaching for real life
+
+Forme is your adaptive AI coach for fitness, nutrition, and wellness. Personalized plans that evolve with your life.
 
 ## Project info
-
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
 
 ## How can I edit this code?
 

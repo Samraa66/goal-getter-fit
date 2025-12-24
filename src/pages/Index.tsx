@@ -135,8 +135,8 @@ export default function Index() {
                 <Sparkles className="h-5 w-5 text-primary-foreground" />
               </div>
               <div className="flex-1">
-                <h3 className="font-semibold text-foreground">AI Coach</h3>
-                <p className="text-sm text-muted-foreground">Ask me anything about your fitness journey</p>
+                <h3 className="font-semibold text-foreground">Forme Coach</h3>
+                <p className="text-sm text-muted-foreground">Adjust your Forme for this week</p>
               </div>
               <ChevronRight className="h-5 w-5 text-muted-foreground" />
             </div>

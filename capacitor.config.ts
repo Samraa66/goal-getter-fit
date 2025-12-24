@@ -1,8 +1,8 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.goalgetter.fit',
-  appName: 'FitCoach AI',
+  appId: 'com.forme.app',
+  appName: 'Forme',
   webDir: 'dist',
   server: {
     url: 'https://5466aae9-837c-42d1-9b79-15884f19fd78.lovableproject.com?forceHideBadge=true',
