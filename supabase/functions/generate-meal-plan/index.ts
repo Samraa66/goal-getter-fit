@@ -109,7 +109,7 @@ CRITICAL BUDGET RULES:
 
     const mealTypesString = mealTypes.map(t => `"${t}"`).join(", ");
     const mealJsonTemplate = mealTypes.map(t => 
-      `{"meal_type":"${t}","name":"string","description":"string","calories":number,"protein":number,"carbs":number,"fats":number,"recipe":"Step 1: ... Step 2: ... Step 3: ..."}`
+      `{"meal_type":"${t}","name":"string","description":"string","calories":number,"protein":number,"carbs":number,"fats":number,"recipe":"1. First action. 2. Second action. 3. Third action."}`
     ).join(",");
 
     const systemPrompt = `You are an elite sports nutritionist. Generate a precisely calculated, personalized daily meal plan.
@@ -142,7 +142,14 @@ ${fitnessGoal === 'lose_weight' || fitnessGoal === 'fat_loss' ? '- Focus on high
 ${bmi < 18.5 ? '- User is underweight: include easily digestible, nutrient-dense options' : ''}
 
 Generate exactly ${mealCount} meals with types: ${mealTypesString}.
-For recipes, use NUMBERED STEPS format like: "Step 1: Chop vegetables. Step 2: Heat pan. Step 3: Cook for 5 minutes."
+
+RECIPE FORMAT RULES (CRITICAL):
+- NO separate ingredients section - ingredients are in the Grocery List already
+- Each step = ONE cooking action only
+- Each step = ONE sentence only
+- Mention ingredients naturally within the step
+- No prices, nutrition info, or shopping data in steps
+- Format: "1. Bring water to a boil. 2. Add oats and reduce heat. 3. Simmer for 5 minutes. 4. Stir in protein powder. 5. Top with berries."
 
 RESPOND WITH ONLY THIS JSON STRUCTURE (no markdown, no extra text):
 {"meals":[${mealJsonTemplate}],"total_calories":${calorieTarget},"total_protein":${proteinTarget},"total_carbs":${carbTarget},"total_fats":${fatTarget}}`;
