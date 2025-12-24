@@ -28,11 +28,13 @@ serve(async (req) => {
     const dailyBudget = profile.daily_food_budget || null;
     const activityLevel = profile.activity_level || 'moderately_active';
     const otherSports = profile.other_sports || [];
+    const fitnessGoal = profile.fitness_goal || 'general_health';
+    const weightGoal = profile.weight_goal || weight;
     
     // Calculate protein target (1.6-2.2g/kg based on goal)
     let proteinPerKg = 1.8;
-    if (profile.fitness_goal === 'muscle_gain' || profile.fitness_goal === 'gain_muscle') proteinPerKg = 2.2;
-    if (profile.fitness_goal === 'fat_loss' || profile.fitness_goal === 'lose_weight') proteinPerKg = 2.0;
+    if (fitnessGoal === 'muscle_gain' || fitnessGoal === 'gain_muscle') proteinPerKg = 2.2;
+    if (fitnessGoal === 'fat_loss' || fitnessGoal === 'lose_weight') proteinPerKg = 2.0;
     
     // Increase protein if user does sports
     if (otherSports.length > 0) proteinPerKg += 0.2;
@@ -42,6 +44,54 @@ serve(async (req) => {
     // Fat: 25% of calories, Carbs: remainder
     const fatTarget = Math.round((calorieTarget * 0.25) / 9);
     const carbTarget = Math.round((calorieTarget - (proteinTarget * 4) - (fatTarget * 9)) / 4);
+
+    // DYNAMIC MEAL COUNT based on user profile and goals
+    let mealCount = 4; // default
+    let mealTypes = ["breakfast", "lunch", "snack", "dinner"];
+    
+    // Determine meal count based on goal and calories
+    if (fitnessGoal === 'muscle_gain' || fitnessGoal === 'gain_muscle') {
+      // Bodybuilders/muscle gain: more frequent meals
+      if (calorieTarget >= 2500) {
+        mealCount = 5;
+        mealTypes = ["breakfast", "morning_snack", "lunch", "afternoon_snack", "dinner"];
+      } else if (calorieTarget >= 3000) {
+        mealCount = 6;
+        mealTypes = ["breakfast", "morning_snack", "lunch", "afternoon_snack", "dinner", "evening_snack"];
+      }
+    } else if (fitnessGoal === 'lose_weight' || fitnessGoal === 'fat_loss') {
+      // Weight loss: depends on calorie target
+      if (calorieTarget <= 1500) {
+        mealCount = 3;
+        mealTypes = ["breakfast", "lunch", "dinner"];
+      }
+    } else if (fitnessGoal === 'maintain') {
+      // Maintenance: standard 4 meals
+      mealCount = 4;
+      mealTypes = ["breakfast", "lunch", "snack", "dinner"];
+    }
+    
+    // Adjust for underweight users (lower appetite)
+    const bmi = weight / ((height / 100) ** 2);
+    if (bmi < 18.5) {
+      // Underweight: smaller, more frequent meals if gaining, or fewer if maintaining
+      if (weightGoal > weight) {
+        mealCount = Math.min(5, mealCount + 1);
+        if (!mealTypes.includes("morning_snack")) {
+          mealTypes = ["breakfast", "morning_snack", "lunch", "snack", "dinner"];
+        }
+      }
+    }
+    
+    // High activity: add extra snack if not already present
+    if ((activityLevel === 'very_active' || activityLevel === 'extremely_active') && mealCount < 5) {
+      mealCount = Math.min(5, mealCount + 1);
+      if (!mealTypes.includes("afternoon_snack") && !mealTypes.includes("morning_snack")) {
+        mealTypes.push("afternoon_snack");
+      }
+    }
+
+    console.log(`Dynamic meal plan: ${mealCount} meals for goal: ${fitnessGoal}, BMI: ${bmi.toFixed(1)}`);
 
     const budgetTierInfo = dailyBudget ? `
 BUDGET CONSTRAINT: $${dailyBudget}/day
@@ -57,12 +107,18 @@ CRITICAL BUDGET RULES:
 4. Include estimated cost per meal in output
 5. If target macros cannot be perfectly achieved within budget, get as close as possible and note any compromises` : '';
 
+    const mealTypesString = mealTypes.map(t => `"${t}"`).join(", ");
+    const mealJsonTemplate = mealTypes.map(t => 
+      `{"meal_type":"${t}","name":"string","description":"string","calories":number,"protein":number,"carbs":number,"fats":number,"recipe":"Step 1: ... Step 2: ... Step 3: ..."}`
+    ).join(",");
+
     const systemPrompt = `You are an elite sports nutritionist. Generate a precisely calculated, personalized daily meal plan.
 
 USER PROFILE:
 - Age: ${age} years, Height: ${height} cm, Weight: ${weight} kg
-- Goal Weight: ${profile.weight_goal || weight} kg
-- Fitness Goal: ${profile.fitness_goal || 'general_health'}
+- BMI: ${bmi.toFixed(1)}
+- Goal Weight: ${weightGoal} kg
+- Fitness Goal: ${fitnessGoal}
 - Activity Level: ${activityLevel}
 - Other Sports/Activities: ${otherSports.length > 0 ? otherSports.join(', ') : 'none'}
 - Dietary Preference: ${profile.dietary_preference || 'omnivore'}
@@ -77,10 +133,19 @@ NUTRITIONAL TARGETS:
 - Fat: ${fatTarget}g
 - Carbs: ${carbTarget}g
 
-Generate exactly 4 meals (breakfast, lunch, snack, dinner).
+MEAL PLAN STRATEGY:
+- Number of meals: ${mealCount}
+- Meal types: ${mealTypesString}
+- Distribute calories and macros evenly across meals
+${fitnessGoal === 'muscle_gain' || fitnessGoal === 'gain_muscle' ? '- Focus on high-protein, calorie-dense meals for muscle building' : ''}
+${fitnessGoal === 'lose_weight' || fitnessGoal === 'fat_loss' ? '- Focus on high-satiety, lower-calorie meals with adequate protein for fat loss' : ''}
+${bmi < 18.5 ? '- User is underweight: include easily digestible, nutrient-dense options' : ''}
+
+Generate exactly ${mealCount} meals with types: ${mealTypesString}.
+For recipes, use NUMBERED STEPS format like: "Step 1: Chop vegetables. Step 2: Heat pan. Step 3: Cook for 5 minutes."
 
 RESPOND WITH ONLY THIS JSON STRUCTURE (no markdown, no extra text):
-{"meals":[{"meal_type":"breakfast","name":"string","description":"string","calories":number,"protein":number,"carbs":number,"fats":number,"recipe":"string"},{"meal_type":"lunch","name":"string","description":"string","calories":number,"protein":number,"carbs":number,"fats":number,"recipe":"string"},{"meal_type":"snack","name":"string","description":"string","calories":number,"protein":number,"carbs":number,"fats":number,"recipe":"string"},{"meal_type":"dinner","name":"string","description":"string","calories":number,"protein":number,"carbs":number,"fats":number,"recipe":"string"}],"total_calories":${calorieTarget},"total_protein":${proteinTarget},"total_carbs":${carbTarget},"total_fats":${fatTarget}}`;
+{"meals":[${mealJsonTemplate}],"total_calories":${calorieTarget},"total_protein":${proteinTarget},"total_carbs":${carbTarget},"total_fats":${fatTarget}}`;
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -158,6 +223,12 @@ RESPOND WITH ONLY THIS JSON STRUCTURE (no markdown, no extra text):
         throw new Error("Invalid meal plan structure - missing meals array");
       }
       
+      // Normalize meal types to standard types for the app
+      mealPlan.meals = mealPlan.meals.map((meal: any) => ({
+        ...meal,
+        meal_type: normalizeMealType(meal.meal_type),
+      }));
+      
     } catch (parseError) {
       console.error("Failed to parse AI response:", parseError);
       console.error("Content that failed to parse:", content?.substring(0, 1000));
@@ -178,3 +249,18 @@ RESPOND WITH ONLY THIS JSON STRUCTURE (no markdown, no extra text):
     });
   }
 });
+
+// Normalize various meal type names to our standard types
+function normalizeMealType(mealType: string): string {
+  const type = mealType.toLowerCase().replace(/[_\s]+/g, '_');
+  
+  if (type.includes('breakfast')) return 'breakfast';
+  if (type.includes('lunch')) return 'lunch';
+  if (type.includes('dinner')) return 'dinner';
+  if (type.includes('morning') && type.includes('snack')) return 'snack';
+  if (type.includes('afternoon') && type.includes('snack')) return 'snack';
+  if (type.includes('evening') && type.includes('snack')) return 'snack';
+  if (type.includes('snack')) return 'snack';
+  
+  return 'snack'; // default to snack for unknown types
+}
