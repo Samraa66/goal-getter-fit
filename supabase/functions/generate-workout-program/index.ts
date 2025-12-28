@@ -137,6 +137,16 @@ ${sportsImpact.hasCardioSports ? 'SKIP SEPARATE CARDIO - user gets it from sport
    - Medium (60-90kg): Standard progression, mixed reps (8-12)
    - Heavy (>90kg): Can handle more volume, lower reps for compounds (6-10)
 
+====== CRITICAL DAY ASSIGNMENT RULES ======
+- Start the FIRST workout on Monday (day_of_week: 1)
+- NEVER generate rest days as workouts - just skip those days
+- ONLY output actual training days with exercises
+- Spread workouts across the week starting from Monday
+- Example for 3-day program: Monday(1), Wednesday(3), Friday(5)
+- Example for 4-day program: Monday(1), Tuesday(2), Thursday(4), Friday(5)
+- Example for 5-day program: Monday(1), Tuesday(2), Wednesday(3), Friday(5), Saturday(6)
+- Example for 6-day program: Monday(1), Tuesday(2), Wednesday(3), Thursday(4), Friday(5), Saturday(6)
+
 ====== OUTPUT FORMAT (STRICT JSON) ======
 {
   "program_name": "${split} - ${fitnessGoal.replace(/_/g, ' ')}",
@@ -162,7 +172,8 @@ ${sportsImpact.hasCardioSports ? 'SKIP SEPARATE CARDIO - user gets it from sport
   ]
 }
 
-workout_type MUST be one of: "push", "pull", "legs", "chest", "back", "shoulders", "arms", "upper", "lower", "full_body", "cardio", "rest"
+workout_type MUST be one of: "push", "pull", "legs", "chest", "back", "shoulders", "arms", "upper", "lower", "full_body", "cardio"
+DO NOT include "rest" type workouts - only actual training days with exercises.
 day_of_week: 0=Sunday, 1=Monday, ..., 6=Saturday
 
 Output ONLY valid JSON. No markdown, no code blocks, no explanation.`;
@@ -220,12 +231,25 @@ Output ONLY valid JSON. No markdown, no code blocks, no explanation.`;
       throw new Error("Failed to generate valid workout program");
     }
 
-    // Normalize workout types to ensure consistency
+    // Normalize workout types and filter out rest days
     if (workoutProgram.workouts) {
-      workoutProgram.workouts = workoutProgram.workouts.map((workout: any) => ({
-        ...workout,
-        workout_type: normalizeWorkoutType(workout.workout_type || workout.name),
-      }));
+      workoutProgram.workouts = workoutProgram.workouts
+        .filter((workout: any) => {
+          // Filter out rest days
+          const type = (workout.workout_type || workout.name || '').toLowerCase();
+          if (type === 'rest' || type === 'recovery' || type.includes('rest day')) {
+            return false;
+          }
+          // Filter out workouts with no exercises
+          if (!workout.exercises || workout.exercises.length === 0) {
+            return false;
+          }
+          return true;
+        })
+        .map((workout: any) => ({
+          ...workout,
+          workout_type: normalizeWorkoutType(workout.workout_type || workout.name),
+        }));
     }
 
     console.log("Generate Workout Program: Success -", workoutProgram.workouts?.length, "workouts");

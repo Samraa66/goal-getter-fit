@@ -74,6 +74,11 @@ export default function Workouts() {
     }
     
     if (!workout.exercises || workout.exercises.length === 0) {
+      toast({
+        title: "No exercises found",
+        description: "This workout doesn't have any exercises. Try regenerating your program.",
+        variant: "destructive",
+      });
       return;
     }
     setActiveWorkout({
