@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { emitPlanRefresh } from "./usePlanRefresh";
 
 interface ProfileUpdateResult {
   hasUpdates: boolean;
@@ -54,25 +55,52 @@ export function useProfileUpdates() {
     regenerateMeals: boolean,
     regenerateWorkouts: boolean
   ) => {
+    const promises: Promise<void>[] = [];
+
     if (regenerateMeals) {
-      // The meal plan will be regenerated automatically on next fetch
-      // Just clear the current day's plan to force regeneration
-      const today = new Date().toISOString().split("T")[0];
-      await supabase
-        .from("meal_plans")
-        .delete()
-        .eq("user_id", userId)
-        .eq("plan_date", today);
+      promises.push(
+        (async () => {
+          // Delete current day's meal plan to force regeneration
+          const today = new Date().toISOString().split("T")[0];
+          const { error } = await supabase
+            .from("meal_plans")
+            .delete()
+            .eq("user_id", userId)
+            .eq("plan_date", today);
+          
+          if (error) {
+            console.error("Failed to delete meal plan for regeneration:", error);
+          } else {
+            console.log("Meal plan deleted, emitting refresh event");
+            // Emit event to refresh meals on any listening pages
+            emitPlanRefresh("meals");
+          }
+        })()
+      );
     }
 
     if (regenerateWorkouts) {
-      // Mark current workout program as inactive to trigger regeneration
-      await supabase
-        .from("workout_programs")
-        .update({ is_active: false })
-        .eq("user_id", userId)
-        .eq("is_active", true);
+      promises.push(
+        (async () => {
+          // Mark current workout program as inactive
+          const { error } = await supabase
+            .from("workout_programs")
+            .update({ is_active: false })
+            .eq("user_id", userId)
+            .eq("is_active", true);
+          
+          if (error) {
+            console.error("Failed to deactivate workout program:", error);
+          } else {
+            console.log("Workout program deactivated, emitting refresh event");
+            // Emit event to refresh workouts on any listening pages
+            emitPlanRefresh("workouts");
+          }
+        })()
+      );
     }
+
+    await Promise.all(promises);
   };
 
   return {

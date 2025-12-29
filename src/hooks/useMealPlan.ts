@@ -35,7 +35,7 @@ export function useMealPlan(date: Date = new Date()) {
 
   const dateStr = format(date, "yyyy-MM-dd");
 
-  const fetchMealPlan = useCallback(async () => {
+  const fetchMealPlan = useCallback(async (retryCount = 0) => {
     if (!user) return;
 
     setIsLoading(true);
@@ -69,7 +69,13 @@ export function useMealPlan(date: Date = new Date()) {
       }
     } catch (error) {
       console.error("Error fetching meal plan:", error);
-      toast.error("Failed to load meal plan");
+      // Retry up to 2 times on network failures
+      if (retryCount < 2 && error instanceof TypeError && error.message.includes("fetch")) {
+        console.log(`Retrying meal plan fetch (attempt ${retryCount + 2})...`);
+        setTimeout(() => fetchMealPlan(retryCount + 1), 1000 * (retryCount + 1));
+        return;
+      }
+      toast.error("Failed to load meal plan. Pull down to refresh.");
     } finally {
       setIsLoading(false);
     }

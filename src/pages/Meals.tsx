@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { MealCard } from "@/components/meals/MealCard";
 import { Button } from "@/components/ui/button";
@@ -8,9 +8,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ShoppingCart, Calendar, Plus, Loader2, Sparkles, Edit3, Check } from "lucide-react";
+import { ShoppingCart, Calendar, Plus, Loader2, Sparkles, Edit3 } from "lucide-react";
 import { useMealPlan } from "@/hooks/useMealPlan";
 import { useWeeklyMealPlans } from "@/hooks/useWeeklyMealPlans";
+import { usePlanRefresh } from "@/hooks/usePlanRefresh";
 import { addDays, format } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -64,7 +65,16 @@ export default function Meals() {
     toggleMealComplete: toggleTomorrowComplete,
   } = useMealPlan(tomorrow);
   
-  const { weekPlans, allMeals, isLoading: isLoadingWeek } = useWeeklyMealPlans();
+  const { weekPlans, allMeals, isLoading: isLoadingWeek, refetch: refetchWeek } = useWeeklyMealPlans();
+
+  // Listen for refresh events from Coach AI
+  const handleMealsRefresh = useCallback(() => {
+    console.log("Meals page: Received refresh event, refetching...");
+    refetch();
+    refetchWeek();
+  }, [refetch, refetchWeek]);
+  
+  usePlanRefresh(handleMealsRefresh, undefined);
   
   // Calculate consumed vs planned based on completed meals
   const completedMeals = mealPlan?.meals.filter(m => m.is_completed) || [];

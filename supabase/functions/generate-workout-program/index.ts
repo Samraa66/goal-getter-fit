@@ -231,16 +231,15 @@ Output ONLY valid JSON. No markdown, no code blocks, no explanation.`;
       throw new Error("Failed to generate valid workout program");
     }
 
-    // Normalize workout types and filter out rest days
+    // Normalize workout types, filter out rest days, and ensure proper day assignment
     if (workoutProgram.workouts) {
-      workoutProgram.workouts = workoutProgram.workouts
+      // First filter out rest days and empty workouts
+      let validWorkouts = workoutProgram.workouts
         .filter((workout: any) => {
-          // Filter out rest days
           const type = (workout.workout_type || workout.name || '').toLowerCase();
           if (type === 'rest' || type === 'recovery' || type.includes('rest day')) {
             return false;
           }
-          // Filter out workouts with no exercises
           if (!workout.exercises || workout.exercises.length === 0) {
             return false;
           }
@@ -250,6 +249,28 @@ Output ONLY valid JSON. No markdown, no code blocks, no explanation.`;
           ...workout,
           workout_type: normalizeWorkoutType(workout.workout_type || workout.name),
         }));
+
+      // CRITICAL: Force proper day assignment starting from Monday (1)
+      // Day mapping based on number of workouts - always start Monday
+      const dayMappings: Record<number, number[]> = {
+        1: [1],                           // Monday
+        2: [1, 4],                         // Monday, Thursday
+        3: [1, 3, 5],                      // Monday, Wednesday, Friday
+        4: [1, 2, 4, 5],                   // Monday, Tuesday, Thursday, Friday
+        5: [1, 2, 3, 5, 6],                // Monday, Tuesday, Wednesday, Friday, Saturday
+        6: [1, 2, 3, 4, 5, 6],             // Monday through Saturday
+      };
+
+      const numWorkouts = validWorkouts.length;
+      const targetDays = dayMappings[numWorkouts] || dayMappings[3];
+
+      // Reassign days to ensure they start from Monday
+      validWorkouts = validWorkouts.map((workout: any, index: number) => ({
+        ...workout,
+        day_of_week: targetDays[index] !== undefined ? targetDays[index] : (index + 1),
+      }));
+
+      workoutProgram.workouts = validWorkouts;
     }
 
     console.log("Generate Workout Program: Success -", workoutProgram.workouts?.length, "workouts");
