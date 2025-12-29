@@ -19,7 +19,6 @@ import {
   Home,
   Building2,
   Shuffle,
-  User,
   Apple,
   Leaf,
   Flame,
@@ -38,7 +37,6 @@ type DietPreference = "none" | "vegetarian" | "vegan" | "keto" | "paleo";
 type ActivityLevel = "sedentary" | "lightly_active" | "moderately_active" | "very_active";
 
 interface OnboardingData {
-  fullName: string;
   goal: Goal | null;
   experienceLevel: ExperienceLevel | null;
   workoutLocation: WorkoutLocation | null;
@@ -114,7 +112,6 @@ export default function Onboarding() {
   const [isLoading, setIsLoading] = useState(false);
   const [isApplyingPending, setIsApplyingPending] = useState(false);
   const [data, setData] = useState<OnboardingData>({
-    fullName: "",
     goal: null,
     experienceLevel: null,
     workoutLocation: null,
@@ -159,7 +156,6 @@ export default function Onboarding() {
             
             const pendingProfileData = {
               id: user.id,
-              full_name: parsed.fullName?.trim() || '',
               fitness_goal: parsed.goal,
               experience_level: parsed.experienceLevel,
               workout_location: parsed.workoutLocation,
@@ -229,7 +225,6 @@ export default function Onboarding() {
   const saveOnboardingToProfile = async (userId: string) => {
     const profileData = {
       id: userId,
-      full_name: data.fullName.trim(),
       fitness_goal: data.goal,
       experience_level: data.experienceLevel,
       workout_location: data.workoutLocation,
@@ -369,23 +364,9 @@ export default function Onboarding() {
           description="We'll create a personalized plan based on this."
           onNext={handleNext}
           isFirst
-          canProceed={!!data.goal && data.fullName.trim().length > 0}
+          canProceed={!!data.goal}
         >
           <div className="space-y-6">
-            <div>
-              <Label className="text-foreground mb-2 block font-medium">Your name</Label>
-              <div className="relative">
-                <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  type="text"
-                  placeholder="Enter your full name"
-                  value={data.fullName}
-                  onChange={(e) => setData({ ...data, fullName: e.target.value })}
-                  className="bg-card h-11 pl-10"
-                />
-              </div>
-            </div>
-
             <div className="grid grid-cols-1 gap-3">
               {goals.map(({ id, icon: Icon, label, description, color }) => (
                 <button

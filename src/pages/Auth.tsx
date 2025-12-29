@@ -93,7 +93,28 @@ export default function Auth() {
           });
         }
       } else {
-        const { error } = await signUp(email, password, fullName);
+        // Validate full name for signup
+        if (!fullName.trim()) {
+          toast({
+            title: "Name required",
+            description: "Please enter your full name.",
+            variant: "destructive",
+          });
+          setIsLoading(false);
+          return;
+        }
+
+        const { error, data: signUpData } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            emailRedirectTo: `${window.location.origin}/`,
+            data: {
+              full_name: fullName.trim(),
+            },
+          },
+        });
+        
         if (error) {
           if (error.message.includes("User already registered")) {
             toast({
@@ -108,24 +129,25 @@ export default function Auth() {
               variant: "destructive",
             });
           }
-        } else {
-          // Check for pending onboarding data and apply it
-          const pendingOnboarding = localStorage.getItem("pendingOnboarding");
-          if (pendingOnboarding) {
-            toast({
-              title: "Account created!",
-              description: "Saving your personalized plan...",
-            });
-            // The onboarding data will be applied after redirect
-            // We don't apply here because user.id isn't available yet
-            navigate("/onboarding");
-          } else {
-            toast({
-              title: "Account created!",
-              description: "Welcome to Forme. Let's set up your profile.",
-            });
-            navigate("/onboarding");
+        } else if (signUpData.user) {
+          // Create the profile row immediately after signup
+          const { error: profileError } = await supabase
+            .from("profiles")
+            .upsert({
+              id: signUpData.user.id,
+              full_name: fullName.trim(),
+              onboarding_completed: false,
+            }, { onConflict: "id" });
+
+          if (profileError) {
+            console.error("Error creating profile:", profileError);
           }
+
+          toast({
+            title: "Account created!",
+            description: "Welcome to Forme. Let's set up your profile.",
+          });
+          navigate("/onboarding");
         }
       }
     } catch (error) {
