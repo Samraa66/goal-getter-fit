@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { WorkoutCard } from "@/components/workouts/WorkoutCard";
 import { ActiveWorkout } from "@/components/workouts/ActiveWorkout";
@@ -9,6 +9,7 @@ import { Calendar, TrendingUp, Loader2, Sparkles, Edit3, Lock, Flame, Dumbbell, 
 import { useWorkoutProgram } from "@/hooks/useWorkoutProgram";
 import { useWorkoutHistory } from "@/hooks/useWorkoutHistory";
 import { useStreak } from "@/hooks/useStreak";
+import { usePlanRefresh } from "@/hooks/usePlanRefresh";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
@@ -41,8 +42,17 @@ export default function Workouts() {
     isGenerating, 
     generateProgram, 
     completeWorkout,
-    completeExercise 
+    completeExercise,
+    refetch: refetchProgram
   } = useWorkoutProgram();
+
+  // Listen for refresh events from Coach AI
+  const handleWorkoutsRefresh = useCallback(() => {
+    console.log("Workouts page: Received refresh event, refetching...");
+    refetchProgram();
+  }, [refetchProgram]);
+  
+  usePlanRefresh(undefined, handleWorkoutsRefresh);
 
   const { completedWorkouts, isLoading: isLoadingHistory } = useWorkoutHistory();
   const { currentStreak, todayComplete, workoutDone, mealsDone } = useStreak();

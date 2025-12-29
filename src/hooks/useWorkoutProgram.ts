@@ -40,7 +40,7 @@ export function useWorkoutProgram() {
   const [isLoading, setIsLoading] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
 
-  const fetchProgram = useCallback(async () => {
+  const fetchProgram = useCallback(async (retryCount = 0) => {
     if (!user) return;
 
     setIsLoading(true);
@@ -91,7 +91,13 @@ export function useWorkoutProgram() {
       }
     } catch (error) {
       console.error("Error fetching workout program:", error);
-      toast.error("Failed to load workout program");
+      // Retry up to 2 times on network failures
+      if (retryCount < 2 && error instanceof TypeError && error.message.includes("fetch")) {
+        console.log(`Retrying fetch (attempt ${retryCount + 2})...`);
+        setTimeout(() => fetchProgram(retryCount + 1), 1000 * (retryCount + 1));
+        return;
+      }
+      toast.error("Failed to load workout program. Pull down to refresh.");
     } finally {
       setIsLoading(false);
     }
