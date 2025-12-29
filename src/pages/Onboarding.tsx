@@ -38,6 +38,7 @@ type DietPreference = "none" | "vegetarian" | "vegan" | "keto" | "paleo";
 type ActivityLevel = "sedentary" | "lightly_active" | "moderately_active" | "very_active";
 
 interface OnboardingData {
+  fullName: string;
   goal: Goal | null;
   experienceLevel: ExperienceLevel | null;
   workoutLocation: WorkoutLocation | null;
@@ -113,6 +114,7 @@ export default function Onboarding() {
   const [isLoading, setIsLoading] = useState(false);
   const [isApplyingPending, setIsApplyingPending] = useState(false);
   const [data, setData] = useState<OnboardingData>({
+    fullName: "",
     goal: null,
     experienceLevel: null,
     workoutLocation: null,
@@ -155,27 +157,31 @@ export default function Onboarding() {
           try {
             const parsed = JSON.parse(pendingData);
             
+            const pendingProfileData = {
+              id: user.id,
+              full_name: parsed.fullName?.trim() || '',
+              fitness_goal: parsed.goal,
+              experience_level: parsed.experienceLevel,
+              workout_location: parsed.workoutLocation,
+              dietary_preference: parsed.dietPreference,
+              activity_level: parsed.activityLevel,
+              other_sports: parsed.otherSports || [],
+              allergies: parsed.allergies || [],
+              disliked_foods: parsed.dislikedFoods || [],
+              weight_current: parsed.weight ? parseFloat(parsed.weight) : null,
+              weight_goal: parsed.targetWeight ? parseFloat(parsed.targetWeight) : null,
+              height_cm: parsed.height ? parseInt(parsed.height) : null,
+              age: parsed.age ? parseInt(parsed.age) : null,
+              workouts_per_week: parsed.workoutsPerWeek || 3,
+              daily_calorie_target: parsed.dailyCalorieTarget || 2000,
+              daily_food_budget: parsed.dailyFoodBudget ? parseFloat(parsed.dailyFoodBudget) : null,
+              onboarding_completed: true,
+            };
+
+            // Use upsert to handle both new profiles and existing ones
             const { error } = await supabase
               .from("profiles")
-              .update({
-                fitness_goal: parsed.goal,
-                experience_level: parsed.experienceLevel,
-                workout_location: parsed.workoutLocation,
-                dietary_preference: parsed.dietPreference,
-                activity_level: parsed.activityLevel,
-                other_sports: parsed.otherSports || [],
-                allergies: parsed.allergies || [],
-                disliked_foods: parsed.dislikedFoods || [],
-                weight_current: parsed.weight ? parseFloat(parsed.weight) : null,
-                weight_goal: parsed.targetWeight ? parseFloat(parsed.targetWeight) : null,
-                height_cm: parsed.height ? parseInt(parsed.height) : null,
-                age: parsed.age ? parseInt(parsed.age) : null,
-                workouts_per_week: parsed.workoutsPerWeek || 3,
-                daily_calorie_target: parsed.dailyCalorieTarget || 2000,
-                daily_food_budget: parsed.dailyFoodBudget ? parseFloat(parsed.dailyFoodBudget) : null,
-                onboarding_completed: true,
-              })
-              .eq("id", user.id);
+              .upsert(pendingProfileData, { onConflict: "id" });
 
             if (error) throw error;
             
@@ -221,27 +227,31 @@ export default function Onboarding() {
   };
 
   const saveOnboardingToProfile = async (userId: string) => {
+    const profileData = {
+      id: userId,
+      full_name: data.fullName.trim(),
+      fitness_goal: data.goal,
+      experience_level: data.experienceLevel,
+      workout_location: data.workoutLocation,
+      dietary_preference: data.dietPreference,
+      activity_level: data.activityLevel,
+      other_sports: data.otherSports,
+      allergies: data.allergies,
+      disliked_foods: data.dislikedFoods,
+      weight_current: data.weight ? parseFloat(data.weight) : null,
+      weight_goal: data.targetWeight ? parseFloat(data.targetWeight) : null,
+      height_cm: data.height ? parseInt(data.height) : null,
+      age: data.age ? parseInt(data.age) : null,
+      workouts_per_week: data.workoutsPerWeek,
+      daily_calorie_target: data.dailyCalorieTarget,
+      daily_food_budget: data.dailyFoodBudget ? parseFloat(data.dailyFoodBudget) : null,
+      onboarding_completed: true,
+    };
+
+    // Use upsert to handle both new profiles and existing ones
     const { error } = await supabase
       .from("profiles")
-      .update({
-        fitness_goal: data.goal,
-        experience_level: data.experienceLevel,
-        workout_location: data.workoutLocation,
-        dietary_preference: data.dietPreference,
-        activity_level: data.activityLevel,
-        other_sports: data.otherSports,
-        allergies: data.allergies,
-        disliked_foods: data.dislikedFoods,
-        weight_current: data.weight ? parseFloat(data.weight) : null,
-        weight_goal: data.targetWeight ? parseFloat(data.targetWeight) : null,
-        height_cm: data.height ? parseInt(data.height) : null,
-        age: data.age ? parseInt(data.age) : null,
-        workouts_per_week: data.workoutsPerWeek,
-        daily_calorie_target: data.dailyCalorieTarget,
-        daily_food_budget: data.dailyFoodBudget ? parseFloat(data.dailyFoodBudget) : null,
-        onboarding_completed: true,
-      })
-      .eq("id", userId);
+      .upsert(profileData, { onConflict: "id" });
     
     return { error };
   };
@@ -352,40 +362,56 @@ export default function Onboarding() {
         />
       </div>
 
-      {/* Step 1: Goal + Body Metrics */}
+      {/* Step 1: Name + Goal */}
       {step === 0 && (
         <OnboardingStep
           title="What's your main goal?"
           description="We'll create a personalized plan based on this."
           onNext={handleNext}
           isFirst
-          canProceed={!!data.goal}
+          canProceed={!!data.goal && data.fullName.trim().length > 0}
         >
-          <div className="grid grid-cols-1 gap-3">
-            {goals.map(({ id, icon: Icon, label, description, color }) => (
-              <button
-                key={id}
-                onClick={() => setData({ ...data, goal: id })}
-                className={cn(
-                  "flex items-center gap-4 p-4 rounded-xl border transition-all text-left",
-                  data.goal === id
-                    ? "border-primary bg-primary/10 scale-[1.02]"
-                    : "border-border bg-card hover:border-primary/50"
-                )}
-              >
-                <div className={cn("p-3 rounded-xl bg-background", data.goal === id && "bg-primary/20")}>
-                  <Icon className={cn("h-6 w-6", color)} />
-                </div>
-                <div className="flex-1">
-                  <span className="font-semibold text-foreground block">{label}</span>
-                  <span className="text-sm text-muted-foreground">{description}</span>
-                </div>
-                <div className={cn(
-                  "h-5 w-5 rounded-full border-2 transition-all",
-                  data.goal === id ? "border-primary bg-primary" : "border-muted-foreground"
-                )} />
-              </button>
-            ))}
+          <div className="space-y-6">
+            <div>
+              <Label className="text-foreground mb-2 block font-medium">Your name</Label>
+              <div className="relative">
+                <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  type="text"
+                  placeholder="Enter your full name"
+                  value={data.fullName}
+                  onChange={(e) => setData({ ...data, fullName: e.target.value })}
+                  className="bg-card h-11 pl-10"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3">
+              {goals.map(({ id, icon: Icon, label, description, color }) => (
+                <button
+                  key={id}
+                  onClick={() => setData({ ...data, goal: id })}
+                  className={cn(
+                    "flex items-center gap-4 p-4 rounded-xl border transition-all text-left",
+                    data.goal === id
+                      ? "border-primary bg-primary/10 scale-[1.02]"
+                      : "border-border bg-card hover:border-primary/50"
+                  )}
+                >
+                  <div className={cn("p-3 rounded-xl bg-background", data.goal === id && "bg-primary/20")}>
+                    <Icon className={cn("h-6 w-6", color)} />
+                  </div>
+                  <div className="flex-1">
+                    <span className="font-semibold text-foreground block">{label}</span>
+                    <span className="text-sm text-muted-foreground">{description}</span>
+                  </div>
+                  <div className={cn(
+                    "h-5 w-5 rounded-full border-2 transition-all",
+                    data.goal === id ? "border-primary bg-primary" : "border-muted-foreground"
+                  )} />
+                </button>
+              ))}
+            </div>
           </div>
         </OnboardingStep>
       )}
