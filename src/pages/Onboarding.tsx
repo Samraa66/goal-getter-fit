@@ -23,8 +23,7 @@ import {
   Leaf,
   Flame,
   Beef,
-  Bike,
-  Footprints
+  UserCircle
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -35,9 +34,11 @@ type ExperienceLevel = "beginner" | "intermediate" | "advanced";
 type WorkoutLocation = "gym" | "home" | "both";
 type DietPreference = "none" | "vegetarian" | "vegan" | "keto" | "paleo";
 type ActivityLevel = "sedentary" | "lightly_active" | "moderately_active" | "very_active";
+type Gender = "male" | "female" | "non_binary";
 
 interface OnboardingData {
   goal: Goal | null;
+  gender: Gender | null;
   experienceLevel: ExperienceLevel | null;
   workoutLocation: WorkoutLocation | null;
   dietPreference: DietPreference | null;
@@ -59,6 +60,12 @@ const goals = [
   { id: "gain_muscle" as Goal, icon: Dumbbell, label: "Build Muscle", description: "Gain strength & size", color: "text-blue-500" },
   { id: "maintain" as Goal, icon: Target, label: "Maintain", description: "Keep current physique", color: "text-green-500" },
   { id: "improve_fitness" as Goal, icon: Heart, label: "Get Healthier", description: "Improve overall wellness", color: "text-pink-500" },
+];
+
+const genderOptions = [
+  { id: "male" as Gender, label: "Male", icon: "👨" },
+  { id: "female" as Gender, label: "Female", icon: "👩" },
+  { id: "non_binary" as Gender, label: "Non-binary / Prefer not to say", icon: "🧑" },
 ];
 
 const experienceLevels = [
@@ -113,6 +120,7 @@ export default function Onboarding() {
   const [isApplyingPending, setIsApplyingPending] = useState(false);
   const [data, setData] = useState<OnboardingData>({
     goal: null,
+    gender: null,
     experienceLevel: null,
     workoutLocation: null,
     dietPreference: null,
@@ -156,6 +164,7 @@ export default function Onboarding() {
             
             const pendingProfileData = {
               id: user.id,
+              gender: parsed.gender,
               fitness_goal: parsed.goal,
               experience_level: parsed.experienceLevel,
               workout_location: parsed.workoutLocation,
@@ -204,7 +213,7 @@ export default function Onboarding() {
     checkOnboardingStatus();
   }, [user, navigate, toast]);
 
-  const totalSteps = 5;
+  const totalSteps = 6; // Added gender step
 
   // Show loading while applying pending data
   if (isApplyingPending) {
@@ -225,6 +234,7 @@ export default function Onboarding() {
   const saveOnboardingToProfile = async (userId: string) => {
     const profileData = {
       id: userId,
+      gender: data.gender,
       fitness_goal: data.goal,
       experience_level: data.experienceLevel,
       workout_location: data.workoutLocation,
@@ -268,8 +278,8 @@ export default function Onboarding() {
       } catch (error) {
         console.error("Error saving profile:", error);
         toast({
-          title: "Error",
-          description: "Failed to save your profile. Please try again.",
+          title: "Something went wrong",
+          description: "Please try again. If the issue persists, contact support.",
           variant: "destructive",
         });
       } finally {
@@ -335,7 +345,12 @@ export default function Onboarding() {
       very_active: 400,
     };
     
-    let suggested = baseCalories;
+    // Gender-based adjustment (physiological differences)
+    let genderAdjustment = 0;
+    if (data.gender === "male") genderAdjustment = 200;
+    else if (data.gender === "female") genderAdjustment = -100;
+    
+    let suggested = baseCalories + genderAdjustment;
     if (data.goal) suggested += goalAdjustment[data.goal];
     if (data.activityLevel) suggested += activityAdjustment[data.activityLevel];
     
@@ -357,7 +372,7 @@ export default function Onboarding() {
         />
       </div>
 
-      {/* Step 1: Name + Goal */}
+      {/* Step 1: Goal */}
       {step === 0 && (
         <OnboardingStep
           title="What's your main goal?"
@@ -397,8 +412,47 @@ export default function Onboarding() {
         </OnboardingStep>
       )}
 
-      {/* Step 2: Body Stats + Activity Level */}
+      {/* Step 2: Gender Identity */}
       {step === 1 && (
+        <OnboardingStep
+          title="How do you identify?"
+          description="This helps us personalize training volume and nutrition estimates."
+          onNext={handleNext}
+          onBack={handleBack}
+          canProceed={!!data.gender}
+        >
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 gap-3">
+              {genderOptions.map(({ id, label, icon }) => (
+                <button
+                  key={id}
+                  onClick={() => setData({ ...data, gender: id })}
+                  className={cn(
+                    "flex items-center gap-4 p-4 rounded-xl border transition-all text-left",
+                    data.gender === id
+                      ? "border-primary bg-primary/10"
+                      : "border-border bg-card hover:border-primary/50"
+                  )}
+                >
+                  <span className="text-2xl">{icon}</span>
+                  <span className="font-medium text-foreground flex-1">{label}</span>
+                  <div className={cn(
+                    "h-5 w-5 rounded-full border-2 transition-all",
+                    data.gender === id ? "border-primary bg-primary" : "border-muted-foreground"
+                  )} />
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground text-center mt-4">
+              This information is used only to provide more accurate calorie and training estimates. 
+              We respect your privacy and identity.
+            </p>
+          </div>
+        </OnboardingStep>
+      )}
+
+      {/* Step 3: Body Stats + Activity Level */}
+      {step === 2 && (
         <OnboardingStep
           title="About you"
           description="Help us calculate your ideal plan."
@@ -478,8 +532,8 @@ export default function Onboarding() {
         </OnboardingStep>
       )}
 
-      {/* Step 3: Workout Preferences + Sports */}
-      {step === 2 && (
+      {/* Step 4: Workout Preferences + Sports */}
+      {step === 3 && (
         <OnboardingStep
           title="Your training"
           description="How and where do you like to work out?"
@@ -570,8 +624,8 @@ export default function Onboarding() {
         </OnboardingStep>
       )}
 
-      {/* Step 4: Diet + Budget */}
-      {step === 3 && (
+      {/* Step 5: Diet + Budget */}
+      {step === 4 && (
         <OnboardingStep
           title="Nutrition"
           description="We'll suggest meals you'll actually want to eat."
@@ -653,8 +707,8 @@ export default function Onboarding() {
         </OnboardingStep>
       )}
 
-      {/* Step 5: Calorie Target + Review */}
-      {step === 4 && (
+      {/* Step 6: Calorie Target + Review */}
+      {step === 5 && (
         <OnboardingStep
           title="Your daily target"
           description="Adjust based on your preferences."
@@ -718,6 +772,14 @@ export default function Onboarding() {
                   </div>
                 )}
               </div>
+            </div>
+
+            {/* Wellness Disclaimer */}
+            <div className="rounded-xl bg-muted/50 border border-border p-3">
+              <p className="text-xs text-muted-foreground text-center">
+                Forme provides general wellness guidance and is not a substitute for professional medical advice. 
+                Consult a healthcare provider before starting any new fitness or nutrition program.
+              </p>
             </div>
           </div>
 
