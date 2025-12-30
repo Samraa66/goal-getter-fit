@@ -3,7 +3,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { ChatMessage } from "@/components/chat/ChatMessage";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Send, Sparkles, Loader2 } from "lucide-react";
+import { Send, Sparkles, Loader2, RefreshCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
@@ -24,6 +24,7 @@ interface UserProfile {
   age: number | null;
   other_sports: string[] | null;
   preferred_split: string | null;
+  gender: string | null;
 }
 
 const SUGGESTIONS = [
@@ -35,7 +36,12 @@ const SUGGESTIONS = [
 
 export default function Coach() {
   const { user } = useAuth();
-  const { checkForProfileUpdates, triggerRegeneration } = useProfileUpdates();
+  const { 
+    checkForProfileUpdates, 
+    triggerRegeneration,
+    isRegenerating,
+    regenerationType 
+  } = useProfileUpdates();
   const {
     messages,
     isLoading,
@@ -77,7 +83,7 @@ export default function Coach() {
   }, [messages]);
 
   const sendMessage = async (messageText: string) => {
-    if (!messageText.trim() || isLoading || !user) return;
+    if (!messageText.trim() || isLoading || isRegenerating || !user) return;
 
     setInput("");
     setIsLoading(true);
@@ -85,27 +91,8 @@ export default function Coach() {
     // Add user message (saves to DB)
     await addUserMessage(messageText);
     
-    // Check for profile updates in the background
-    checkForProfileUpdates(messageText, user.id).then(async (result) => {
-      if (result.hasUpdates) {
-        // Refetch profile to get updated data
-        const { data } = await supabase
-          .from("profiles")
-          .select("*")
-          .eq("id", user.id)
-          .single();
-        if (data) setProfile(data as unknown as UserProfile);
-        
-        // Trigger regeneration if needed
-        if (result.needsMealRegeneration || result.needsWorkoutRegeneration) {
-          await triggerRegeneration(
-            user.id,
-            result.needsMealRegeneration || false,
-            result.needsWorkoutRegeneration || false
-          );
-        }
-      }
-    });
+    // Check for profile updates and plan modifications
+    const profileCheckPromise = checkForProfileUpdates(messageText, user.id);
     
     try {
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-coach`, {
@@ -125,12 +112,12 @@ export default function Coach() {
 
       if (!response.ok) {
         if (response.status === 429) {
-          throw new Error("Rate limit exceeded. Please wait a moment and try again.");
+          throw new Error("We're experiencing high demand. Please try again in a moment.");
         }
         if (response.status === 402) {
           throw new Error("Usage limit reached. Please try again later.");
         }
-        throw new Error("Failed to get response");
+        throw new Error("Something went wrong. Please try again.");
       }
 
       // Start streaming response (adds empty assistant message to state)
@@ -175,15 +162,37 @@ export default function Coach() {
       if (assistantContent) {
         await completeAssistantResponse(assistantContent);
       }
+
+      setIsLoading(false);
+
+      // Now handle profile updates and regeneration after AI response completes
+      const result = await profileCheckPromise;
+      if (result.hasUpdates) {
+        // Refetch profile to get updated data
+        const { data } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", user.id)
+          .single();
+        if (data) setProfile(data as unknown as UserProfile);
+        
+        // Trigger regeneration if needed
+        if (result.needsMealRegeneration || result.needsWorkoutRegeneration) {
+          await triggerRegeneration(
+            user.id,
+            result.needsMealRegeneration || false,
+            result.needsWorkoutRegeneration || false
+          );
+        }
+      }
     } catch (error) {
       console.error("Error sending message:", error);
       toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to send message",
+        title: "Couldn't send message",
+        description: error instanceof Error ? error.message : "Please try again.",
         variant: "destructive"
       });
-      removeLastMessage(); // Remove the loading/empty message
-    } finally {
+      removeLastMessage();
       setIsLoading(false);
     }
   };
@@ -192,6 +201,9 @@ export default function Coach() {
     e.preventDefault();
     sendMessage(input);
   };
+
+  // Determine if input should be disabled
+  const inputDisabled = isLoading || isRegenerating;
 
   // Show loading state while fetching chat history
   if (isLoadingHistory) {
@@ -221,6 +233,18 @@ export default function Coach() {
           </div>
         </div>
 
+        {/* Regeneration Banner */}
+        {isRegenerating && (
+          <div className="px-6 py-3 bg-primary/10 border-b border-primary/20 flex items-center gap-3">
+            <RefreshCw className="h-4 w-4 animate-spin text-primary" />
+            <span className="text-sm text-primary">
+              {regenerationType === 'meal' && "Updating your meal plan..."}
+              {regenerationType === 'workout' && "Updating your workout program..."}
+              {regenerationType === 'both' && "Updating your plans..."}
+            </span>
+          </div>
+        )}
+
         {/* Messages */}
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4 scrollbar-hide text-destructive-foreground">
           {messages.map((message, index) => (
@@ -232,8 +256,8 @@ export default function Coach() {
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Suggestions (only show when few messages) */}
-        {messages.length <= 2 && (
+        {/* Suggestions (only show when few messages and not loading) */}
+        {messages.length <= 2 && !inputDisabled && (
           <div className="px-6 py-2">
             <div className="flex flex-wrap gap-2">
               {SUGGESTIONS.map((suggestion) => (
@@ -242,7 +266,7 @@ export default function Coach() {
                   variant="outline"
                   size="sm"
                   onClick={() => sendMessage(suggestion)}
-                  disabled={isLoading}
+                  disabled={inputDisabled}
                   className="text-xs text-secondary-foreground"
                 >
                   {suggestion}
@@ -258,17 +282,21 @@ export default function Coach() {
             <Input
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Talk to your coach..."
+              placeholder={isRegenerating ? "Updating your plan..." : "Talk to your coach..."}
               className="flex-1 bg-card"
-              disabled={isLoading}
+              disabled={inputDisabled}
             />
             <Button
               type="submit"
               size="icon"
               className="gradient-primary"
-              disabled={!input.trim() || isLoading}
+              disabled={!input.trim() || inputDisabled}
             >
-              <Send className="h-4 w-4" />
+              {isRegenerating ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="h-4 w-4" />
+              )}
             </Button>
           </form>
         </div>

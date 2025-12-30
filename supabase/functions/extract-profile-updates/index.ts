@@ -43,7 +43,10 @@ serve(async (req) => {
 
     console.log("Extract Profile Updates: Analyzing message for user", userId);
 
-    const extractionPrompt = `Analyze this user message and extract fitness/nutrition profile updates OR temporary weekly activity changes.
+    const extractionPrompt = `Analyze this user message and extract:
+1. Fitness/nutrition PROFILE updates (permanent changes)
+2. Temporary weekly activity changes
+3. Direct PLAN MODIFICATION requests (change a specific meal or workout)
 
 User message: "${message}"
 
@@ -63,15 +66,34 @@ User message: "${message}"
 - weekly_activities: activities happening THIS WEEK that affect training
   Example: "I have a football match Saturday" → affects this week's leg volume
 
+====== PLAN MODIFICATION REQUESTS (immediate change) ======
+Detect when user wants to CHANGE their current meal or workout plan:
+
+MEAL MODIFICATION triggers:
+- "I don't want this dinner" / "change my dinner"
+- "Can I eat something else for lunch?"
+- "I don't like today's breakfast"
+- "Give me a different meal"
+- "This meal doesn't work for me"
+- "Swap this meal out"
+
+WORKOUT MODIFICATION triggers:
+- "This workout is too hard" / "too intense"
+- "Make it easier" / "Make this shorter"
+- "I can't do this exercise"
+- "Change today's workout"
+- "I need an easier workout"
+- "This is too much"
+
 ====== DETECTION RULES ======
 1. "I prefer Push/Pull/Legs" → preferred_split: "push_pull_legs"
 2. "I train one muscle per day" → preferred_split: "bro_split"
 3. "I play football every weekend" → other_sports: ["football"] (permanent)
 4. "I have a football match this week" → weekly_activities (temporary)
-5. "This plan is too intense" / "too hard" → reduce workouts_per_week by 1 or change experience to lower
-6. "I'm a beginner" → experience_level: "beginner"
-7. "I've been training for years" → experience_level: "advanced"
-8. "I also do boxing" → other_sports: ["boxing"]
+5. "This plan is too intense" / "too hard" → planModification with type "workout"
+6. "I don't want this meal" → planModification with type "meal"
+7. "I'm a beginner" → experience_level: "beginner"
+8. "I've been training for years" → experience_level: "advanced"
 
 ====== OUTPUT FORMAT ======
 Return ONLY valid JSON:
@@ -79,6 +101,11 @@ Return ONLY valid JSON:
   "hasUpdates": true/false,
   "updates": { ...profile fields... },
   "weeklyActivities": { "activities": [...], "notes": "..." },
+  "planModification": {
+    "type": "meal" | "workout" | null,
+    "reason": "user's reason for change",
+    "context": "any specific details like which meal or what adjustment"
+  },
   "needsWorkoutRegeneration": true/false,
   "needsMealRegeneration": true/false
 }
@@ -86,9 +113,8 @@ Return ONLY valid JSON:
 If nothing relevant found: {"hasUpdates": false}
 
 CRITICAL: 
-- Distinguish between PERMANENT preferences (other_sports) vs TEMPORARY this-week activities
-- preferred_split changes ALWAYS require workout regeneration
-- other_sports changes ALWAYS require workout regeneration
+- Plan modification requests (meal/workout) should set needsMealRegeneration or needsWorkoutRegeneration to true
+- hasUpdates should be true even if ONLY a planModification is detected
 - Output ONLY valid JSON, no markdown`;
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
@@ -146,7 +172,11 @@ CRITICAL:
       });
     }
 
-    if (!extractionResult.hasUpdates) {
+    // Check if there's a plan modification request even without profile updates
+    const planModification = extractionResult.planModification || {};
+    const hasPlanModification = planModification.type === 'meal' || planModification.type === 'workout';
+
+    if (!extractionResult.hasUpdates && !hasPlanModification) {
       return new Response(JSON.stringify({ hasUpdates: false }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -191,12 +221,13 @@ CRITICAL:
       console.log("Profile updated:", mergedUpdates);
     }
 
-    // Determine what needs regeneration
+    // Determine what needs regeneration (including plan modification requests)
     const needsMealRegeneration = !!(
       updates.allergies ||
       updates.disliked_foods ||
       updates.dietary_preference ||
-      updates.fitness_goal
+      updates.fitness_goal ||
+      planModification.type === 'meal'
     );
 
     const needsWorkoutRegeneration = !!(
@@ -207,16 +238,18 @@ CRITICAL:
       updates.other_sports ||
       updates.preferred_split ||
       updates.experience_level ||
-      (weeklyActivities.activities && weeklyActivities.activities.length > 0)
+      (weeklyActivities.activities && weeklyActivities.activities.length > 0) ||
+      planModification.type === 'workout'
     );
 
     return new Response(JSON.stringify({
       hasUpdates: true,
       updates: mergedUpdates,
       weeklyActivities,
+      planModification: hasPlanModification ? planModification : undefined,
       needsMealRegeneration,
       needsWorkoutRegeneration,
-      message: buildUpdateMessage(mergedUpdates, weeklyActivities),
+      message: buildUpdateMessage(mergedUpdates, weeklyActivities, planModification),
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
@@ -230,7 +263,13 @@ CRITICAL:
   }
 });
 
-function buildUpdateMessage(updates: Record<string, any>, weeklyActivities: WeeklyActivityUpdate): string {
+interface PlanModification {
+  type?: 'meal' | 'workout' | null;
+  reason?: string;
+  context?: string;
+}
+
+function buildUpdateMessage(updates: Record<string, any>, weeklyActivities: WeeklyActivityUpdate, planModification?: PlanModification): string {
   const parts: string[] = [];
   
   if (updates.allergies) {
@@ -262,6 +301,14 @@ function buildUpdateMessage(updates: Record<string, any>, weeklyActivities: Week
   }
   if (weeklyActivities.activities && weeklyActivities.activities.length > 0) {
     parts.push(`this week's activities (${weeklyActivities.activities.join(", ")})`);
+  }
+  
+  // Add plan modification message
+  if (planModification?.type === 'meal') {
+    return "Regenerating your meal plan...";
+  }
+  if (planModification?.type === 'workout') {
+    return "Regenerating your workout program...";
   }
   
   return parts.length > 0 ? `Updated: ${parts.join(", ")}` : "";
