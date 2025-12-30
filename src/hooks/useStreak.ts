@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
-import { format, subDays, isSameDay } from "date-fns";
+import { format, subDays } from "date-fns";
 
 interface StreakData {
   currentStreak: number;
@@ -31,7 +31,7 @@ export function useStreak() {
       const todayStr = format(today, "yyyy-MM-dd");
       const todayDayOfWeek = today.getDay();
 
-      // Check today's workout completion
+      // Get active workout program
       const { data: workoutProgram } = await supabase
         .from("workout_programs")
         .select("id")
@@ -39,19 +39,28 @@ export function useStreak() {
         .eq("is_active", true)
         .maybeSingle();
 
-      let workoutDone = false;
+      // Check if today has a scheduled workout and if it's completed
+      let workoutDone = true; // Default to true if no workout scheduled
+      let todayHasWorkout = false;
+      
       if (workoutProgram) {
         const { data: todayWorkout } = await supabase
           .from("workouts")
-          .select("is_completed")
+          .select("is_completed, completed_at")
           .eq("program_id", workoutProgram.id)
           .eq("day_of_week", todayDayOfWeek)
           .maybeSingle();
 
-        // If no workout scheduled for today, consider it done
-        workoutDone = !todayWorkout || todayWorkout.is_completed === true;
-      } else {
-        workoutDone = true; // No program = workout not required
+        if (todayWorkout) {
+          todayHasWorkout = true;
+          // Check if completed TODAY (not just marked complete from a previous week)
+          if (todayWorkout.completed_at) {
+            const completedDate = format(new Date(todayWorkout.completed_at), "yyyy-MM-dd");
+            workoutDone = completedDate === todayStr;
+          } else {
+            workoutDone = todayWorkout.is_completed === true;
+          }
+        }
       }
 
       // Check today's meals completion
@@ -73,24 +82,23 @@ export function useStreak() {
         mealsDone = meals && meals.length > 0 && meals.every(m => m.is_completed === true);
       }
 
+      // Today is complete if: (workout done OR no workout scheduled) AND meals done
       const todayComplete = workoutDone && mealsDone;
 
-      // Calculate streak by going back through days
-      let currentStreak = todayComplete ? 1 : 0;
-      let checkDate = todayComplete ? subDays(today, 1) : subDays(today, 0);
+      // Calculate streak by counting consecutive completed days backwards
+      let currentStreak = 0;
       
-      // If today isn't complete but yesterday was, still count from yesterday
-      if (!todayComplete) {
-        checkDate = subDays(today, 1);
-      }
+      // Start checking from today if complete, otherwise from yesterday
+      const startOffset = todayComplete ? 0 : 1;
 
-      // Check previous days for streak
-      for (let i = 0; i < 365; i++) {
+      for (let dayOffset = startOffset; dayOffset < 365; dayOffset++) {
+        const checkDate = subDays(today, dayOffset);
         const dateStr = format(checkDate, "yyyy-MM-dd");
         const dayOfWeek = checkDate.getDay();
 
+        let dayComplete = true;
+
         // Check workout for this day
-        let dayWorkoutDone = true;
         if (workoutProgram) {
           const { data: dayWorkout } = await supabase
             .from("workouts")
@@ -100,15 +108,17 @@ export function useStreak() {
             .maybeSingle();
 
           if (dayWorkout) {
-            // Check if completed on that specific day
+            // Must be completed on that specific day
             if (dayWorkout.completed_at) {
-              const completedDate = new Date(dayWorkout.completed_at);
-              dayWorkoutDone = isSameDay(completedDate, checkDate) || 
-                              (completedDate <= checkDate && dayWorkout.is_completed);
+              const completedDate = format(new Date(dayWorkout.completed_at), "yyyy-MM-dd");
+              if (completedDate !== dateStr) {
+                dayComplete = false;
+              }
             } else {
-              dayWorkoutDone = false;
+              dayComplete = false;
             }
           }
+          // If no workout scheduled for that day, it's fine
         }
 
         // Check meals for this day
@@ -119,24 +129,24 @@ export function useStreak() {
           .eq("plan_date", dateStr)
           .maybeSingle();
 
-        let dayMealsDone = false;
         if (dayMealPlan) {
           const { data: dayMeals } = await supabase
             .from("meals")
             .select("is_completed")
             .eq("meal_plan_id", dayMealPlan.id);
 
-          dayMealsDone = dayMeals && dayMeals.length > 0 && dayMeals.every(m => m.is_completed === true);
+          if (!dayMeals || dayMeals.length === 0 || !dayMeals.every(m => m.is_completed === true)) {
+            dayComplete = false;
+          }
+        } else {
+          // No meal plan for this day - if it's in the past, break streak
+          if (dayOffset > 0) {
+            dayComplete = false;
+          }
         }
 
-        if (dayWorkoutDone && dayMealsDone) {
-          if (!todayComplete && i === 0) {
-            // Yesterday was complete, start counting
-            currentStreak = 1;
-          } else {
-            currentStreak++;
-          }
-          checkDate = subDays(checkDate, 1);
+        if (dayComplete) {
+          currentStreak++;
         } else {
           break;
         }
@@ -144,7 +154,7 @@ export function useStreak() {
 
       setStreakData({
         currentStreak,
-        longestStreak: currentStreak, // For now, just use current as longest
+        longestStreak: currentStreak, // For now, track current as longest
         todayComplete,
         workoutDone,
         mealsDone,

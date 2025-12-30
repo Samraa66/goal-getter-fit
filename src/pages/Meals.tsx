@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { MealCard } from "@/components/meals/MealCard";
 import { Button } from "@/components/ui/button";
@@ -8,9 +8,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Progress } from "@/components/ui/progress";
 import { ShoppingCart, Calendar, Plus, Loader2, Sparkles, Edit3 } from "lucide-react";
 import { useMealPlan } from "@/hooks/useMealPlan";
 import { useWeeklyMealPlans } from "@/hooks/useWeeklyMealPlans";
+import { useWeeklyMealGeneration } from "@/hooks/useWeeklyMealGeneration";
 import { usePlanRefresh } from "@/hooks/usePlanRefresh";
 import { addDays, format } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
@@ -72,6 +74,18 @@ export default function Meals() {
     isLoading: isLoadingWeek,
     refetch: refetchWeek
   } = useWeeklyMealPlans();
+  
+  const {
+    generateWeeklyMealPlan,
+    isGenerating: isGeneratingWeek,
+    progress: weekProgress
+  } = useWeeklyMealGeneration();
+
+  // Cache ref to prevent data loss on tab switches
+  const cachedWeekPlans = useRef(weekPlans);
+  if (weekPlans.length > 0) {
+    cachedWeekPlans.current = weekPlans;
+  }
 
   // Listen for refresh events from Coach AI
   const handleMealsRefresh = useCallback(() => {
@@ -80,6 +94,15 @@ export default function Meals() {
     refetchWeek();
   }, [refetch, refetchWeek]);
   usePlanRefresh(handleMealsRefresh, undefined);
+
+  // Handle weekly generation
+  const handleGenerateWeek = async () => {
+    const result = await generateWeeklyMealPlan();
+    if (result) {
+      refetch();
+      refetchWeek();
+    }
+  };
 
   // Calculate consumed vs planned based on completed meals
   const completedMeals = mealPlan?.meals.filter(m => m.is_completed) || [];
@@ -276,12 +299,20 @@ export default function Meals() {
     </Dialog>;
   const EmptyState = ({
     onGenerate,
+    onGenerateWeek,
     isGeneratingPlan,
-    showOptions = true
+    isGeneratingWeekPlan,
+    weekProgress: genProgress,
+    showOptions = true,
+    showWeekOption = false
   }: {
     onGenerate: () => void;
+    onGenerateWeek?: () => void;
     isGeneratingPlan: boolean;
+    isGeneratingWeekPlan?: boolean;
+    weekProgress?: number;
     showOptions?: boolean;
+    showWeekOption?: boolean;
   }) => <div className="flex flex-col items-center justify-center py-12 text-center">
       <Sparkles className="h-12 w-12 text-muted-foreground mb-4" />
       <p className="text-muted-foreground mb-2">No meal plan yet</p>
@@ -289,21 +320,36 @@ export default function Meals() {
         Generate an AI-powered plan tailored to your goals, or add your own meals
       </p>
       
-      {showOptions && !showCustomOption ? <div className="flex flex-col gap-3 w-full max-w-xs">
-          <Button className="gradient-primary w-full" onClick={onGenerate} disabled={isGeneratingPlan}>
-            {isGeneratingPlan ? <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Generating...
-              </> : <>
-                <Sparkles className="mr-2 h-4 w-4" />
-                Generate AI Meal Plan
-              </>}
-          </Button>
+      {isGeneratingWeekPlan && (
+        <div className="w-full max-w-xs mb-4">
+          <p className="text-sm text-primary mb-2">Generating weekly plan...</p>
+          <Progress value={genProgress} className="h-2" />
+          <p className="text-xs text-muted-foreground mt-1">{genProgress}% complete</p>
+        </div>
+      )}
+      
+      {showOptions && !showCustomOption && !isGeneratingWeekPlan ? <div className="flex flex-col gap-3 w-full max-w-xs">
+          {showWeekOption && onGenerateWeek ? (
+            <Button className="gradient-primary w-full" onClick={onGenerateWeek} disabled={isGeneratingPlan || isGeneratingWeekPlan}>
+              <Sparkles className="mr-2 h-4 w-4" />
+              Generate Full Week Plan
+            </Button>
+          ) : (
+            <Button className="gradient-primary w-full" onClick={onGenerate} disabled={isGeneratingPlan}>
+              {isGeneratingPlan ? <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Generating...
+                </> : <>
+                  <Sparkles className="mr-2 h-4 w-4" />
+                  Generate AI Meal Plan
+                </>}
+            </Button>
+          )}
           <Button variant="outline" className="w-full" onClick={() => setShowCustomOption(true)}>
             <Edit3 className="mr-2 h-4 w-4" />
             I Have My Own Plan
           </Button>
-        </div> : showCustomOption ? <div className="flex flex-col gap-3 w-full max-w-xs">
+        </div> : showCustomOption && !isGeneratingWeekPlan ? <div className="flex flex-col gap-3 w-full max-w-xs">
           <AddMealDialog />
           <Button variant="ghost" size="sm" onClick={() => setShowCustomOption(false)}>
             Go Back
@@ -388,10 +434,26 @@ export default function Meals() {
           </TabsContent>
 
           <TabsContent value="week" className="mt-4 space-y-3">
-            {isLoadingWeek ? <div className="flex items-center justify-center py-12">
+            {isGeneratingWeek ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
+                <p className="text-muted-foreground mb-2">Generating weekly meal plan...</p>
+                <Progress value={weekProgress} className="w-48 h-2 mt-2" />
+                <p className="text-xs text-muted-foreground mt-2">{weekProgress}% complete</p>
+              </div>
+            ) : isLoadingWeek ? <div className="flex items-center justify-center py-12">
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
-              </div> : weekPlans.length > 0 ? <>
-                {weekPlans.map(day => {
+              </div> : (cachedWeekPlans.current.length > 0 || weekPlans.length > 0) ? <>
+                <Button 
+                  variant="outline" 
+                  className="w-full mb-2 border-dashed" 
+                  onClick={handleGenerateWeek} 
+                  disabled={isGeneratingWeek}
+                >
+                  <Sparkles className="mr-2 h-4 w-4" />
+                  Regenerate Full Week
+                </Button>
+                {(weekPlans.length > 0 ? weekPlans : cachedWeekPlans.current).map(day => {
               const isToday = day.date === format(today, "yyyy-MM-dd");
               return <div key={day.date} className={`rounded-xl border p-4 ${isToday ? 'border-primary bg-primary/5' : 'border-border bg-card'}`}>
                       <div className="flex items-center justify-between mb-2">
@@ -415,13 +477,14 @@ export default function Meals() {
                         </div> : <p className="text-sm text-muted-foreground">No meals planned</p>}
                     </div>;
             })}
-              </> : <div className="flex flex-col items-center justify-center py-12 text-center">
-                <Calendar className="h-12 w-12 text-muted-foreground mb-4" />
-                <p className="text-muted-foreground">No meal plans for this week</p>
-                <Button className="mt-4 gradient-primary" onClick={generateMealPlan}>
-                  Start Planning
-                </Button>
-              </div>}
+              </> : <EmptyState 
+                onGenerate={generateMealPlan} 
+                onGenerateWeek={handleGenerateWeek}
+                isGeneratingPlan={isGenerating} 
+                isGeneratingWeekPlan={isGeneratingWeek}
+                weekProgress={weekProgress}
+                showWeekOption={true}
+              />}
           </TabsContent>
         </Tabs>
       </div>
