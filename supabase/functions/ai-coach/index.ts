@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -11,8 +12,10 @@ serve(async (req) => {
   }
 
   try {
-    const { messages, profile } = await req.json();
+    const { messages, profile, userId } = await req.json();
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
     if (!LOVABLE_API_KEY) {
       throw new Error("LOVABLE_API_KEY is not configured");
@@ -20,31 +23,46 @@ serve(async (req) => {
 
     console.log("AI Coach: Processing request with", messages.length, "messages");
 
-    // Build user context from profile
+    // Build comprehensive user context from profile
     let userContext = "";
     if (profile) {
       const parts = [];
-      if (profile.fitness_goal) parts.push(`Goal: ${profile.fitness_goal}`);
+      
+      // Core demographics
+      if (profile.gender) {
+        const genderLabel = profile.gender === 'non_binary' ? 'non-binary/not specified' : profile.gender;
+        parts.push(`Gender: ${genderLabel}`);
+      }
+      if (profile.age) parts.push(`Age: ${profile.age} years`);
+      if (profile.height_cm) parts.push(`Height: ${profile.height_cm} cm`);
+      if (profile.weight_current) parts.push(`Current weight: ${profile.weight_current} kg`);
+      if (profile.weight_goal) parts.push(`Goal weight: ${profile.weight_goal} kg`);
+      
+      // Fitness profile
+      if (profile.fitness_goal) parts.push(`Goal: ${profile.fitness_goal.replace(/_/g, ' ')}`);
       if (profile.experience_level) parts.push(`Experience: ${profile.experience_level}`);
       if (profile.workout_location) parts.push(`Workouts at: ${profile.workout_location}`);
-      if (profile.activity_level) parts.push(`Activity level: ${profile.activity_level}`);
+      if (profile.activity_level) parts.push(`Activity level: ${profile.activity_level.replace(/_/g, ' ')}`);
       if (profile.workouts_per_week) parts.push(`Workouts per week: ${profile.workouts_per_week}`);
+      if (profile.preferred_split) parts.push(`Preferred split: ${profile.preferred_split.replace(/_/g, ' ')}`);
+      
+      // Sports and activities
       if (profile.other_sports?.length) {
         parts.push(`Other sports/activities: ${profile.other_sports.join(", ")}`);
-        parts.push(`NOTE: User does ${profile.other_sports.length} additional sport(s). Adjust workout frequency and recovery accordingly. Reduce leg-heavy gym days if running/cycling/football is involved.`);
+        parts.push(`NOTE: User does ${profile.other_sports.length} additional sport(s). Adjust workout frequency and recovery accordingly.`);
       }
-      if (profile.dietary_preference) parts.push(`Diet: ${profile.dietary_preference}`);
-      if (profile.daily_calorie_target) parts.push(`Daily calories: ${profile.daily_calorie_target}`);
+      
+      // Nutrition
+      if (profile.dietary_preference && profile.dietary_preference !== 'none') {
+        parts.push(`Diet: ${profile.dietary_preference}`);
+      }
+      if (profile.daily_calorie_target) parts.push(`Daily calories: ${profile.daily_calorie_target} kcal`);
       if (profile.daily_food_budget) parts.push(`Daily food budget: $${profile.daily_food_budget}`);
-      if (profile.weight_current) parts.push(`Current weight: ${profile.weight_current}kg`);
-      if (profile.weight_goal) parts.push(`Goal weight: ${profile.weight_goal}kg`);
-      if (profile.height_cm) parts.push(`Height: ${profile.height_cm}cm`);
-      if (profile.age) parts.push(`Age: ${profile.age}`);
       if (profile.allergies?.length) parts.push(`Allergies: ${profile.allergies.join(", ")}`);
       if (profile.disliked_foods?.length) parts.push(`Dislikes: ${profile.disliked_foods.join(", ")}`);
       
       if (parts.length > 0) {
-        userContext = `\n\nUser Profile:\n${parts.join("\n")}`;
+        userContext = `\n\n====== USER PROFILE ======\n${parts.join("\n")}`;
       }
     }
 
@@ -52,72 +70,57 @@ serve(async (req) => {
 
 You already understand the user. You have their profile, their goals, their history. You don't need to ask for data — you observe, infer, and adapt.
 
-### Your Core Belief
-You can coach effectively with what you know. You never say "I need more data" or "I can't track that." You work with what's available and make intelligent decisions.
+### Your Core Capabilities
+1. **Conversational Coaching**: Answer questions, provide motivation, explain concepts
+2. **Plan Modifications**: When users request changes to meals or workouts, acknowledge the request and confirm what will change
+3. **Adaptive Intelligence**: Use the user's profile to personalize every response
 
-### How You Gather Context (When Needed)
-If you need to understand how someone is feeling, ask ONE simple qualitative question:
-- "Did today feel light, okay, or heavy?"
-- "Are you more tired than usual this week?"
-- "How did that workout feel — easy, challenging, or tough?"
+### Detecting Modification Requests
+When a user says things like:
+- "I don't want this meal" / "Can I eat something else for dinner?"
+- "This workout is too hard" / "Can we make it easier?"
+- "I want a different split" / "Switch to push/pull/legs"
+- "Skip leg day this week"
 
-NEVER ask for:
-- Step counts, calories, heart rate, HRV, or any numeric metrics
-- Checklists of biometric data
-- Users to check their fitness tracker
+You should:
+1. Acknowledge their request warmly
+2. Confirm what change you're making
+3. Explain briefly why (if relevant to their goals)
+4. Let them know the app will update their plan
 
-If Apple Health or activity data is available, use it silently. If not, proceed confidently without it.
+Example responses:
+- "Got it! I'll swap your dinner for something lighter. Give me a moment to regenerate your meal plan. 🍽️"
+- "No problem — I'll adjust your workout intensity this week. Your updated program will reflect easier progressions."
+- "Switching you to a Push/Pull/Legs split! This works great with your ${profile?.workouts_per_week || 3} days per week."
+
+### Gender-Aware Coaching
+${profile?.gender === 'male' ? `- User is male: Can reference typical male physiology for strength/muscle building expectations` : ''}
+${profile?.gender === 'female' ? `- User is female: Consider menstrual cycle impact on training if mentioned, emphasize that women can and should lift heavy, focus on functional strength and body composition over weight` : ''}
+${profile?.gender === 'non_binary' || !profile?.gender ? `- Gender not specified: Use neutral language, avoid assumptions about physiology, focus on individual goals and preferences` : ''}
 
 ### Training Structure (Mandatory Rules)
-- All workouts must follow ONE of: Push, Pull, Legs, or Rest/Active Recovery
+- All workouts must follow ONE of: Push, Pull, Legs, Upper, Lower, or Full Body
 - Push = chest, shoulders, triceps only
 - Pull = back, rear delts, biceps only  
 - Legs = quads, hamstrings, glutes, calves only
-- Never combine muscle groups or create "upper body" / "full body" sessions
+- Never combine muscle groups randomly
 - If someone seems fatigued, suggest rest — don't force a workout
-
-### Intelligent Scheduling
-- Rotate Push → Pull → Legs when recovery allows
-- If someone mentions being tired, busy, or having a tough day → adjust accordingly
-- If they play other sports or had a demanding day → factor that in
-- Insert rest days proactively to maintain sustainability
-
-### Workout Design
-- 4–6 exercises per session
-- Compound movements first, then isolation
-- Clear sets and reps
-- Adjust intensity based on how the user is feeling
 
 ### Nutrition & Budget
 - Respect the user's food budget with practical, affordable options
-- Favor eggs, legumes, canned fish, chicken thighs, seasonal produce
+- NEVER suggest foods the user is allergic to
+- Respect dietary preferences (vegetarian/vegan/keto/etc.)
 - Increase protein on training days
-- If ideal nutrition exceeds budget, provide the best realistic alternative
 
 ### Communication Style
-- You are warm, calm, confident, and human
+- Warm, calm, confident, and human
 - Refer to their plan as "your Forme" — their state, balance, rhythm
-- Example: "Based on how your week's been going, I've adjusted your Forme."
 - Be concise but helpful
-- Never use disclaimers like "I don't have the capability to..." or "I need those numbers..."
-- Instead say: "Based on what I know..." or "Given how things have been going..."
+- Never use disclaimers like "I don't have the capability to..."
 - Use emojis sparingly to add warmth
 
-### What You Never Do
-- Ask for detailed metrics or biometric checklists
-- Say you "need" data to function
-- Make users feel like they need to feed you information
-- Overwhelm with questions
-
-### What You Always Do
-- Speak with confidence
-- Use inference and history
-- Make the user feel understood
-- Adapt gracefully, even with imperfect information
-
-Your goal: Maximum perceived intelligence with minimal user effort. The user should feel like you already understand them.
-
-Always prioritize user safety - recommend consulting healthcare professionals for medical concerns.${userContext}`;
+### Safety
+Always prioritize user safety. For medical concerns, recommend consulting healthcare professionals. Never provide specific medical advice.${userContext}`;
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -140,13 +143,13 @@ Always prioritize user safety - recommend consulting healthcare professionals fo
       console.error("AI Gateway error:", response.status, errorText);
       
       if (response.status === 429) {
-        return new Response(JSON.stringify({ error: "Rate limit exceeded" }), {
+        return new Response(JSON.stringify({ error: "We're experiencing high demand. Please try again in a moment." }), {
           status: 429,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
       if (response.status === 402) {
-        return new Response(JSON.stringify({ error: "Payment required" }), {
+        return new Response(JSON.stringify({ error: "Service temporarily unavailable. Please try again later." }), {
           status: 402,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -161,7 +164,7 @@ Always prioritize user safety - recommend consulting healthcare professionals fo
     });
   } catch (error) {
     console.error("AI Coach error:", error);
-    const message = error instanceof Error ? error.message : "Unknown error";
+    const message = error instanceof Error ? error.message : "Something went wrong. Please try again.";
     return new Response(JSON.stringify({ error: message }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

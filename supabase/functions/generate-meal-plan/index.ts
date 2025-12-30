@@ -20,23 +20,36 @@ serve(async (req) => {
 
     console.log("Generate Meal Plan: Creating plan for", date);
 
-    // Calculate BMR and macros based on profile
+    // Extract profile data with defaults
     const weight = profile.weight_current || 70;
     const height = profile.height_cm || 170;
     const age = profile.age || 30;
+    const gender = profile.gender || 'not_specified';
     const calorieTarget = profile.daily_calorie_target || 2000;
     const dailyBudget = profile.daily_food_budget || null;
     const activityLevel = profile.activity_level || 'moderately_active';
     const otherSports = profile.other_sports || [];
     const fitnessGoal = profile.fitness_goal || 'general_health';
     const weightGoal = profile.weight_goal || weight;
+    const dietaryPreference = profile.dietary_preference || 'none';
+    const allergies = profile.allergies || [];
+    const dislikedFoods = profile.disliked_foods || [];
     
-    // Calculate protein target (1.6-2.2g/kg based on goal)
+    // Gender-based BMR adjustment using Mifflin-St Jeor
+    let bmr;
+    if (gender === 'male') {
+      bmr = (10 * weight) + (6.25 * height) - (5 * age) + 5;
+    } else if (gender === 'female') {
+      bmr = (10 * weight) + (6.25 * height) - (5 * age) - 161;
+    } else {
+      // Non-binary/not specified: use average
+      bmr = (10 * weight) + (6.25 * height) - (5 * age) - 78;
+    }
+
+    // Calculate protein target (1.6-2.2g/kg based on goal and gender)
     let proteinPerKg = 1.8;
     if (fitnessGoal === 'muscle_gain' || fitnessGoal === 'gain_muscle') proteinPerKg = 2.2;
     if (fitnessGoal === 'fat_loss' || fitnessGoal === 'lose_weight') proteinPerKg = 2.0;
-    
-    // Increase protein if user does sports
     if (otherSports.length > 0) proteinPerKg += 0.2;
     
     const proteinTarget = Math.round(weight * proteinPerKg);
@@ -46,44 +59,31 @@ serve(async (req) => {
     const carbTarget = Math.round((calorieTarget - (proteinTarget * 4) - (fatTarget * 9)) / 4);
 
     // DYNAMIC MEAL COUNT based on user profile and goals
-    let mealCount = 4; // default
+    let mealCount = 4;
     let mealTypes = ["breakfast", "lunch", "snack", "dinner"];
     
-    // Determine meal count based on goal and calories
     if (fitnessGoal === 'muscle_gain' || fitnessGoal === 'gain_muscle') {
-      // Bodybuilders/muscle gain: more frequent meals
       if (calorieTarget >= 2500) {
         mealCount = 5;
         mealTypes = ["breakfast", "morning_snack", "lunch", "afternoon_snack", "dinner"];
-      } else if (calorieTarget >= 3000) {
-        mealCount = 6;
-        mealTypes = ["breakfast", "morning_snack", "lunch", "afternoon_snack", "dinner", "evening_snack"];
       }
     } else if (fitnessGoal === 'lose_weight' || fitnessGoal === 'fat_loss') {
-      // Weight loss: depends on calorie target
       if (calorieTarget <= 1500) {
         mealCount = 3;
         mealTypes = ["breakfast", "lunch", "dinner"];
       }
-    } else if (fitnessGoal === 'maintain') {
-      // Maintenance: standard 4 meals
-      mealCount = 4;
-      mealTypes = ["breakfast", "lunch", "snack", "dinner"];
     }
     
-    // Adjust for underweight users (lower appetite)
+    // Adjust for BMI
     const bmi = weight / ((height / 100) ** 2);
-    if (bmi < 18.5) {
-      // Underweight: smaller, more frequent meals if gaining, or fewer if maintaining
-      if (weightGoal > weight) {
-        mealCount = Math.min(5, mealCount + 1);
-        if (!mealTypes.includes("morning_snack")) {
-          mealTypes = ["breakfast", "morning_snack", "lunch", "snack", "dinner"];
-        }
+    if (bmi < 18.5 && weightGoal > weight) {
+      mealCount = Math.min(5, mealCount + 1);
+      if (!mealTypes.includes("morning_snack")) {
+        mealTypes = ["breakfast", "morning_snack", "lunch", "snack", "dinner"];
       }
     }
     
-    // High activity: add extra snack if not already present
+    // High activity: add extra snack
     if ((activityLevel === 'very_active' || activityLevel === 'extremely_active') && mealCount < 5) {
       mealCount = Math.min(5, mealCount + 1);
       if (!mealTypes.includes("afternoon_snack") && !mealTypes.includes("morning_snack")) {
@@ -91,7 +91,19 @@ serve(async (req) => {
       }
     }
 
-    console.log(`Dynamic meal plan: ${mealCount} meals for goal: ${fitnessGoal}, BMI: ${bmi.toFixed(1)}`);
+    console.log(`Dynamic meal plan: ${mealCount} meals for goal: ${fitnessGoal}, gender: ${gender}, BMI: ${bmi.toFixed(1)}`);
+
+    // Build dietary restriction string
+    const dietaryInfo = [];
+    if (dietaryPreference && dietaryPreference !== 'none') {
+      dietaryInfo.push(`Diet: ${dietaryPreference.toUpperCase()}`);
+    }
+    if (allergies.length > 0) {
+      dietaryInfo.push(`CRITICAL ALLERGIES (NEVER include): ${allergies.join(', ')}`);
+    }
+    if (dislikedFoods.length > 0) {
+      dietaryInfo.push(`Foods to avoid: ${dislikedFoods.join(', ')}`);
+    }
 
     const budgetTierInfo = dailyBudget ? `
 BUDGET CONSTRAINT: $${dailyBudget}/day
@@ -102,54 +114,61 @@ Budget-Tier Food Selection Rules:
 
 CRITICAL BUDGET RULES:
 1. Total daily meal cost MUST NOT exceed $${dailyBudget}
-2. Estimate realistic grocery store prices for each ingredient
-3. If budget is tight, automatically substitute expensive items with affordable alternatives
-4. Include estimated cost per meal in output
-5. If target macros cannot be perfectly achieved within budget, get as close as possible and note any compromises` : '';
+2. If budget is tight, automatically substitute expensive items with affordable alternatives` : '';
 
     const mealTypesString = mealTypes.map(t => `"${t}"`).join(", ");
     const mealJsonTemplate = mealTypes.map(t => 
       `{"meal_type":"${t}","name":"string","description":"string","calories":number,"protein":number,"carbs":number,"fats":number,"recipe":"1. First action. 2. Second action. 3. Third action."}`
     ).join(",");
 
+    // Gender-specific nutrition notes
+    const genderNutritionNotes = gender === 'female' 
+      ? `- Consider iron-rich foods (leafy greens, lean red meat, legumes)
+- Include calcium sources for bone health
+- Omega-3 fatty acids for hormonal balance`
+      : gender === 'male'
+      ? `- Focus on zinc-rich foods (meat, shellfish, seeds)
+- Include healthy fats for testosterone support
+- Adequate vitamin D sources`
+      : `- Balanced micronutrient profile
+- Focus on whole foods and variety`;
+
     const systemPrompt = `You are an elite sports nutritionist. Generate a precisely calculated, personalized daily meal plan.
 
 USER PROFILE:
 - Age: ${age} years, Height: ${height} cm, Weight: ${weight} kg
-- BMI: ${bmi.toFixed(1)}
+- Gender: ${gender === 'non_binary' ? 'not specified (use neutral/average calculations)' : gender}
+- BMI: ${bmi.toFixed(1)}, BMR: ${Math.round(bmr)} kcal
 - Goal Weight: ${weightGoal} kg
-- Fitness Goal: ${fitnessGoal}
-- Activity Level: ${activityLevel}
+- Fitness Goal: ${fitnessGoal.replace(/_/g, ' ')}
+- Activity Level: ${activityLevel.replace(/_/g, ' ')}
 - Other Sports/Activities: ${otherSports.length > 0 ? otherSports.join(', ') : 'none'}
-- Dietary Preference: ${profile.dietary_preference || 'omnivore'}
-- Allergies: ${(profile.allergies || []).join(', ') || 'none'}
-- Disliked Foods: ${(profile.disliked_foods || []).join(', ') || 'none'}
-${otherSports.length > 0 ? `NOTE: User does ${otherSports.length} additional sports. Ensure adequate recovery nutrition and carbs for energy.` : ''}
+${dietaryInfo.length > 0 ? '\nDIETARY REQUIREMENTS:\n' + dietaryInfo.join('\n') : ''}
 ${budgetTierInfo}
 
 NUTRITIONAL TARGETS:
 - Daily Calories: ${calorieTarget} kcal
-- Protein: ${proteinTarget}g
+- Protein: ${proteinTarget}g (${proteinPerKg}g/kg body weight)
 - Fat: ${fatTarget}g
 - Carbs: ${carbTarget}g
+
+GENDER-SPECIFIC NUTRITION NOTES:
+${genderNutritionNotes}
 
 MEAL PLAN STRATEGY:
 - Number of meals: ${mealCount}
 - Meal types: ${mealTypesString}
 - Distribute calories and macros evenly across meals
 ${fitnessGoal === 'muscle_gain' || fitnessGoal === 'gain_muscle' ? '- Focus on high-protein, calorie-dense meals for muscle building' : ''}
-${fitnessGoal === 'lose_weight' || fitnessGoal === 'fat_loss' ? '- Focus on high-satiety, lower-calorie meals with adequate protein for fat loss' : ''}
-${bmi < 18.5 ? '- User is underweight: include easily digestible, nutrient-dense options' : ''}
+${fitnessGoal === 'lose_weight' || fitnessGoal === 'fat_loss' ? '- Focus on high-satiety, lower-calorie meals with adequate protein' : ''}
 
 Generate exactly ${mealCount} meals with types: ${mealTypesString}.
 
 RECIPE FORMAT RULES (CRITICAL):
-- NO separate ingredients section - ingredients are in the Grocery List already
+- NO separate ingredients section
 - Each step = ONE cooking action only
 - Each step = ONE sentence only
-- Mention ingredients naturally within the step
-- No prices, nutrition info, or shopping data in steps
-- Format: "1. Bring water to a boil. 2. Add oats and reduce heat. 3. Simmer for 5 minutes. 4. Stir in protein powder. 5. Top with berries."
+- Format: "1. Bring water to a boil. 2. Add oats and reduce heat. 3. Simmer for 5 minutes."
 
 RESPOND WITH ONLY THIS JSON STRUCTURE (no markdown, no extra text):
 {"meals":[${mealJsonTemplate}],"total_calories":${calorieTarget},"total_protein":${proteinTarget},"total_carbs":${carbTarget},"total_fats":${fatTarget}}`;
@@ -174,13 +193,13 @@ RESPOND WITH ONLY THIS JSON STRUCTURE (no markdown, no extra text):
       console.error("AI Gateway error:", response.status, errorText);
       
       if (response.status === 429) {
-        return new Response(JSON.stringify({ error: "Rate limit exceeded. Please try again later." }), {
+        return new Response(JSON.stringify({ error: "We're experiencing high demand. Please try again in a moment." }), {
           status: 429,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
       if (response.status === 402) {
-        return new Response(JSON.stringify({ error: "AI credits exhausted. Please add more credits." }), {
+        return new Response(JSON.stringify({ error: "Service temporarily unavailable. Please try again later." }), {
           status: 402,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -192,11 +211,10 @@ RESPOND WITH ONLY THIS JSON STRUCTURE (no markdown, no extra text):
     const content = data.choices?.[0]?.message?.content;
     
     console.log("AI Raw Response length:", content?.length);
-    console.log("AI Response preview:", content?.substring(0, 500));
 
     if (!content) {
       console.error("No content in AI response");
-      throw new Error("No response from AI");
+      throw new Error("Failed to generate meal plan. Please try again.");
     }
 
     // Parse the JSON response with robust cleaning
@@ -239,7 +257,7 @@ RESPOND WITH ONLY THIS JSON STRUCTURE (no markdown, no extra text):
     } catch (parseError) {
       console.error("Failed to parse AI response:", parseError);
       console.error("Content that failed to parse:", content?.substring(0, 1000));
-      throw new Error("Failed to generate valid meal plan - AI returned invalid format");
+      throw new Error("Failed to generate valid meal plan. Please try again.");
     }
 
     console.log("Generate Meal Plan: Success, returning", mealPlan.meals?.length, "meals");
@@ -249,7 +267,7 @@ RESPOND WITH ONLY THIS JSON STRUCTURE (no markdown, no extra text):
     });
   } catch (error) {
     console.error("Generate Meal Plan error:", error);
-    const message = error instanceof Error ? error.message : "Unknown error";
+    const message = error instanceof Error ? error.message : "Something went wrong. Please try again.";
     return new Response(JSON.stringify({ error: message }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
