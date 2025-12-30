@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { WorkoutCard } from "@/components/workouts/WorkoutCard";
 import { ActiveWorkout } from "@/components/workouts/ActiveWorkout";
@@ -55,11 +55,18 @@ export default function Workouts() {
   usePlanRefresh(undefined, handleWorkoutsRefresh);
 
   const { completedWorkouts, isLoading: isLoadingHistory } = useWorkoutHistory();
-  const { currentStreak, todayComplete, workoutDone, mealsDone } = useStreak();
+  const { currentStreak, todayComplete, workoutDone, mealsDone, refetch: refetchStreak } = useStreak();
+
+  // Cache program to prevent data loss on tab switches
+  const cachedProgram = useRef(program);
+  if (program) {
+    cachedProgram.current = program;
+  }
+  const displayProgram = program || cachedProgram.current;
 
   const today = new Date().getDay();
-  const todayWorkout = program?.workouts.find(w => w.day_of_week === today);
-  const completedThisWeek = program?.workouts.filter(w => w.is_completed).length || 0;
+  const todayWorkout = displayProgram?.workouts.find(w => w.day_of_week === today);
+  const completedThisWeek = displayProgram?.workouts.filter(w => w.is_completed).length || 0;
 
   const canStartWorkout = (workout: any) => {
     if (workout.is_completed) return false;
@@ -151,6 +158,9 @@ export default function Workouts() {
     if (!activeWorkout) return;
     
     await completeWorkout(activeWorkout.id);
+    
+    // Refetch streak after completing workout
+    await refetchStreak();
     
     setShowComplete({
       name: activeWorkout.name,

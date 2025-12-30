@@ -11,7 +11,7 @@ import { useMealPlan } from "@/hooks/useMealPlan";
 import { useWorkoutProgram } from "@/hooks/useWorkoutProgram";
 import { useStreak } from "@/hooks/useStreak";
 import { useWaterIntake } from "@/hooks/useWaterIntake";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
@@ -23,8 +23,18 @@ export default function Index() {
   const { toast } = useToast();
   const { mealPlan, isLoading: mealsLoading, toggleMealComplete, refetch: refetchMeals } = useMealPlan();
   const { program, isLoading: workoutsLoading } = useWorkoutProgram();
-  const { currentStreak, isLoading: streakLoading } = useStreak();
+  const { currentStreak, isLoading: streakLoading, refetch: refetchStreak } = useStreak();
   const { glasses, liters, targetLiters, addWater, isLoading: waterLoading } = useWaterIntake();
+
+  // Cache data refs to prevent flickering on navigation
+  const cachedMealPlan = useRef(mealPlan);
+  const cachedProgram = useRef(program);
+  
+  if (mealPlan) cachedMealPlan.current = mealPlan;
+  if (program) cachedProgram.current = program;
+  
+  const displayMealPlan = mealPlan || cachedMealPlan.current;
+  const displayProgram = program || cachedProgram.current;
   const [profile, setProfile] = useState<{ full_name?: string; daily_calorie_target?: number } | null>(null);
 
   useEffect(() => {
@@ -41,10 +51,10 @@ export default function Index() {
   }, [user]);
 
   const today = new Date().getDay();
-  const todayWorkout = program?.workouts.find(w => w.day_of_week === today);
+  const todayWorkout = displayProgram?.workouts.find(w => w.day_of_week === today);
 
   // Calculate today's stats from COMPLETED meals only
-  const completedMeals = mealPlan?.meals.filter(m => m.is_completed) || [];
+  const completedMeals = displayMealPlan?.meals.filter(m => m.is_completed) || [];
   const consumedCalories = completedMeals.reduce((sum, m) => sum + (m.calories || 0), 0);
   const consumedProtein = completedMeals.reduce((sum, m) => sum + (m.protein || 0), 0);
   
@@ -61,7 +71,7 @@ export default function Index() {
   const calorieProgress = Math.min((todayStats.calories.consumed / todayStats.calories.target) * 100, 100);
 
   // Get first two meals to display
-  const displayMeals = mealPlan?.meals
+  const mealsToDisplay = displayMealPlan?.meals
     .slice()
     .sort((a, b) => mealTypeOrder.indexOf(a.meal_type) - mealTypeOrder.indexOf(b.meal_type))
     .slice(0, 2) || [];
@@ -84,6 +94,10 @@ export default function Index() {
 
   const handleMealToggle = async (mealId: string, completed: boolean) => {
     await toggleMealComplete(mealId, completed);
+    // Refetch streak after completing a meal
+    if (completed) {
+      await refetchStreak();
+    }
   };
 
   return (
@@ -159,8 +173,8 @@ export default function Index() {
               <div className="flex items-center justify-center py-8">
                 <Loader2 className="h-6 w-6 animate-spin text-primary" />
               </div>
-            ) : displayMeals.length > 0 ? (
-              displayMeals.map((meal) => (
+            ) : mealsToDisplay.length > 0 ? (
+              mealsToDisplay.map((meal) => (
                 <MealCard
                   key={meal.id}
                   id={meal.id}
@@ -211,7 +225,7 @@ export default function Index() {
               completed={todayWorkout.is_completed}
               onStart={todayWorkout.is_completed ? undefined : () => navigate("/workouts")}
             />
-          ) : program ? (
+          ) : displayProgram ? (
             <div className="text-center py-6 bg-card border border-border rounded-xl">
               <p className="text-muted-foreground text-sm">Rest day! No workout scheduled.</p>
             </div>
