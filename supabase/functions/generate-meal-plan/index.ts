@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -11,11 +12,38 @@ serve(async (req) => {
   }
 
   try {
-    const { profile, date } = await req.json();
+    const body = await req.json();
+    let profile = body.profile;
+    const date = body.date;
+    const userId = body.userId;
+    
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
     if (!LOVABLE_API_KEY) {
       throw new Error("LOVABLE_API_KEY is not configured");
+    }
+
+    // If userId provided but no profile, fetch profile from database
+    if (!profile && userId && SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
+      console.log("Generate Meal Plan: Fetching profile for user", userId);
+      const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+      const { data: fetchedProfile, error } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", userId)
+        .single();
+      
+      if (error) {
+        console.error("Failed to fetch profile:", error);
+        throw new Error("Could not fetch user profile");
+      }
+      profile = fetchedProfile;
+    }
+
+    if (!profile) {
+      throw new Error("Profile data is required");
     }
 
     console.log("Generate Meal Plan: Creating plan for", date);
