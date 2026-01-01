@@ -30,18 +30,43 @@ serve(async (req) => {
   }
 
   try {
-    const { message, userId } = await req.json();
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
-    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    // SECURITY: Authenticate user from JWT
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: 'No authorization header' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
-    if (!LOVABLE_API_KEY || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+    const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+
+    if (!LOVABLE_API_KEY) {
       throw new Error("Missing required environment variables");
     }
 
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    // Create client with user's auth context
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      global: { headers: { Authorization: authHeader } },
+    });
 
-    console.log("Extract Profile Updates: Analyzing message for user", userId);
+    // SECURITY: Get authenticated user from JWT - never trust client-supplied userId
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError || !user) {
+      console.error("Auth error:", userError);
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const userId = user.id; // SECURITY: Always use authenticated user's ID
+
+    const { message } = await req.json();
+
+    console.log("Extract Profile Updates: Analyzing message for authenticated user", userId);
 
     const extractionPrompt = `Analyze this user message and extract:
 1. Fitness/nutrition PROFILE updates (permanent changes)
@@ -185,7 +210,7 @@ CRITICAL:
     const updates: ProfileUpdate = extractionResult.updates || {};
     const weeklyActivities: WeeklyActivityUpdate = extractionResult.weeklyActivities || {};
 
-    // Fetch current profile to merge arrays
+    // Fetch current profile to merge arrays - using authenticated user's ID
     const { data: currentProfile } = await supabase
       .from("profiles")
       .select("allergies, disliked_foods, other_sports")
@@ -207,7 +232,7 @@ CRITICAL:
       mergedUpdates.other_sports = [...new Set([...currentProfile.other_sports, ...updates.other_sports])];
     }
 
-    // Update the profile if there are updates
+    // Update the profile if there are updates - using authenticated user's ID
     if (Object.keys(mergedUpdates).length > 0) {
       const { error: updateError } = await supabase
         .from("profiles")
