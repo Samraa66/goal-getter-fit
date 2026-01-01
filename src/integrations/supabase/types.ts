@@ -58,6 +58,36 @@ export type Database = {
           },
         ]
       }
+      ai_usage: {
+        Row: {
+          created_at: string
+          generation_count: number
+          id: string
+          last_generation_at: string | null
+          updated_at: string
+          usage_date: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          generation_count?: number
+          id?: string
+          last_generation_at?: string | null
+          updated_at?: string
+          usage_date?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          generation_count?: number
+          id?: string
+          last_generation_at?: string | null
+          updated_at?: string
+          usage_date?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       chat_messages: {
         Row: {
           content: string
@@ -805,6 +835,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      check_ai_rate_limit: { Args: { p_user_id: string }; Returns: Json }
       check_subscription_limit: {
         Args: { p_limit_type: string; p_user_id: string }
         Returns: Json

@@ -11,7 +11,7 @@ interface Message {
 
 const WELCOME_MESSAGE: Message = {
   role: "assistant",
-  content: "Hey! I'm your Forme Coach. I'll help you find your balance — fitness, nutrition, and everything in between.\n\nYou can tell me things like:\n• \"I prefer Push/Pull/Legs\"\n• \"I also play football\"\n• \"This plan is too intense\"\n• \"I have a match this Saturday\"\n\nI'll adjust your Forme for this week!"
+  content: "Hey! I'm your Forme Coach. Tell me what's going on this week and I'll adjust your plan."
 };
 
 export function useCoachChat() {

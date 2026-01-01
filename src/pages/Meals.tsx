@@ -313,49 +313,84 @@ export default function Meals() {
     weekProgress?: number;
     showOptions?: boolean;
     showWeekOption?: boolean;
-  }) => <div className="flex flex-col items-center justify-center py-12 text-center">
-      <Sparkles className="h-12 w-12 text-muted-foreground mb-4" />
-      <p className="text-muted-foreground mb-2">No meal plan yet</p>
-      <p className="text-xs text-muted-foreground mb-6 max-w-xs">
-        Generate an AI-powered plan tailored to your goals, or add your own meals
+  }) => (
+    <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
+      {/* Icon with gradient background */}
+      <div className="relative mb-6">
+        <div className="absolute inset-0 bg-primary/20 rounded-full blur-xl scale-150" />
+        <div className="relative rounded-full bg-gradient-to-br from-primary/20 to-primary/5 p-6 border border-primary/20">
+          <Sparkles className="h-10 w-10 text-primary" />
+        </div>
+      </div>
+      
+      {/* Title and description */}
+      <h3 className="text-lg font-semibold text-foreground mb-2">
+        No meal plan yet
+      </h3>
+      <p className="text-sm text-muted-foreground mb-8 max-w-[280px] leading-relaxed">
+        You don't have a meal plan yet. Generate one based on your goals, or add your own.
       </p>
       
       {isGeneratingWeekPlan && (
-        <div className="w-full max-w-xs mb-4">
-          <p className="text-sm text-primary mb-2">Generating weekly plan...</p>
+        <div className="w-full max-w-xs mb-6">
+          <p className="text-sm font-medium text-primary mb-3">Generating weekly plan...</p>
           <Progress value={genProgress} className="h-2" />
-          <p className="text-xs text-muted-foreground mt-1">{genProgress}% complete</p>
+          <p className="text-xs text-muted-foreground mt-2">{genProgress}% complete</p>
         </div>
       )}
       
-      {showOptions && !showCustomOption && !isGeneratingWeekPlan ? <div className="flex flex-col gap-3 w-full max-w-xs">
+      {showOptions && !showCustomOption && !isGeneratingWeekPlan ? (
+        <div className="flex flex-col gap-3 w-full max-w-xs">
           {showWeekOption && onGenerateWeek ? (
-            <Button className="gradient-primary w-full" onClick={onGenerateWeek} disabled={isGeneratingPlan || isGeneratingWeekPlan}>
-              <Sparkles className="mr-2 h-4 w-4" />
+            <Button 
+              className="gradient-primary w-full h-12 text-base font-medium shadow-lg shadow-primary/25" 
+              onClick={onGenerateWeek} 
+              disabled={isGeneratingPlan || isGeneratingWeekPlan}
+            >
+              <Sparkles className="mr-2 h-5 w-5" />
               Generate Full Week Plan
             </Button>
           ) : (
-            <Button className="gradient-primary w-full" onClick={onGenerate} disabled={isGeneratingPlan}>
-              {isGeneratingPlan ? <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            <Button 
+              className="gradient-primary w-full h-12 text-base font-medium shadow-lg shadow-primary/25" 
+              onClick={onGenerate} 
+              disabled={isGeneratingPlan}
+            >
+              {isGeneratingPlan ? (
+                <>
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
                   Generating...
-                </> : <>
-                  <Sparkles className="mr-2 h-4 w-4" />
+                </>
+              ) : (
+                <>
+                  <Sparkles className="mr-2 h-5 w-5" />
                   Generate AI Meal Plan
-                </>}
+                </>
+              )}
             </Button>
           )}
-          <Button variant="outline" className="w-full" onClick={() => setShowCustomOption(true)}>
+          <Button 
+            variant="ghost" 
+            className="w-full text-muted-foreground hover:text-foreground" 
+            onClick={() => setShowCustomOption(true)}
+          >
             <Edit3 className="mr-2 h-4 w-4" />
             I Have My Own Plan
           </Button>
-        </div> : showCustomOption && !isGeneratingWeekPlan ? <div className="flex flex-col gap-3 w-full max-w-xs">
+          <p className="text-xs text-muted-foreground mt-2">
+            You can edit or regenerate anytime.
+          </p>
+        </div>
+      ) : showCustomOption && !isGeneratingWeekPlan ? (
+        <div className="flex flex-col gap-3 w-full max-w-xs">
           <AddMealDialog />
           <Button variant="ghost" size="sm" onClick={() => setShowCustomOption(false)}>
             Go Back
           </Button>
-        </div> : null}
-    </div>;
+        </div>
+      ) : null}
+    </div>
+  );
   return <AppLayout>
       <div className="dark bg-background pb-6">
         {/* Header */}

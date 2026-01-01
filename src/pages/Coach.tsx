@@ -28,11 +28,13 @@ interface UserProfile {
 }
 
 const SUGGESTIONS = [
-  "What should I eat for dinner?",
-  "I prefer Push/Pull/Legs split",
+  "This plan is too intense",
   "I have a football match this week",
-  "This workout plan is too intense"
+  "I prefer Push/Pull/Legs",
+  "What should I eat tonight?"
 ];
+
+const WELCOME_MESSAGE = `Hey! I'm your Forme Coach. Tell me what's going on this week and I'll adjust your plan.`;
 
 export default function Coach() {
   const { user } = useAuth();
@@ -223,12 +225,15 @@ export default function Coach() {
         {/* Header */}
         <div className="px-6 pt-12 pb-4 border-b border-border">
           <div className="flex items-center gap-3">
-            <div className="rounded-full bg-primary p-2">
-              <Sparkles className="h-5 w-5 text-primary-foreground" />
+            <div className="relative">
+              <div className="absolute inset-0 bg-primary/30 rounded-full blur-md" />
+              <div className="relative rounded-full bg-gradient-to-br from-primary to-primary/80 p-2.5">
+                <Sparkles className="h-5 w-5 text-primary-foreground" />
+              </div>
             </div>
             <div>
-              <h1 className="text-xl font-bold text-foreground">Forme Coach</h1>
-              <p className="text-sm text-muted-foreground">Adaptive coaching for your week</p>
+              <h1 className="text-xl font-bold text-foreground">Your AI Coach</h1>
+              <p className="text-sm text-muted-foreground">Adjust your workouts and nutrition for this week</p>
             </div>
           </div>
         </div>
@@ -237,7 +242,7 @@ export default function Coach() {
         {isRegenerating && (
           <div className="px-6 py-3 bg-primary/10 border-b border-primary/20 flex items-center gap-3">
             <RefreshCw className="h-4 w-4 animate-spin text-primary" />
-            <span className="text-sm text-primary">
+            <span className="text-sm text-primary font-medium">
               {regenerationType === 'meal' && "Updating your meal plan..."}
               {regenerationType === 'workout' && "Updating your workout program..."}
               {regenerationType === 'both' && "Updating your plans..."}
@@ -258,7 +263,8 @@ export default function Coach() {
 
         {/* Suggestions (only show when few messages and not loading) */}
         {messages.length <= 2 && !inputDisabled && (
-          <div className="px-6 py-2">
+          <div className="px-6 py-3 border-t border-border/50 bg-background/50">
+            <p className="text-xs text-muted-foreground mb-3">Try saying:</p>
             <div className="flex flex-wrap gap-2">
               {SUGGESTIONS.map((suggestion) => (
                 <Button
@@ -267,7 +273,7 @@ export default function Coach() {
                   size="sm"
                   onClick={() => sendMessage(suggestion)}
                   disabled={inputDisabled}
-                  className="text-xs text-secondary-foreground"
+                  className="text-xs bg-card hover:bg-accent border-border/50 text-foreground"
                 >
                   {suggestion}
                 </Button>
@@ -277,19 +283,19 @@ export default function Coach() {
         )}
 
         {/* Input */}
-        <div className="p-4 border-t border-border pb-24">
-          <form onSubmit={handleSubmit} className="flex gap-2 text-secondary-foreground">
+        <div className="p-4 border-t border-border pb-24 bg-background">
+          <form onSubmit={handleSubmit} className="flex gap-2">
             <Input
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder={isRegenerating ? "Updating your plan..." : "Talk to your coach..."}
-              className="flex-1 bg-card"
+              placeholder={isRegenerating ? "Coach is updating your plan..." : "Tell me what you want to change…"}
+              className="flex-1 bg-card border-border text-foreground placeholder:text-muted-foreground"
               disabled={inputDisabled}
             />
             <Button
               type="submit"
               size="icon"
-              className="gradient-primary"
+              className="gradient-primary shadow-lg shadow-primary/25"
               disabled={!input.trim() || inputDisabled}
             >
               {isRegenerating ? (

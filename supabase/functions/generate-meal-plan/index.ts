@@ -23,6 +23,7 @@ serve(async (req) => {
 
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
 
     // Create client with user's auth context
@@ -41,6 +42,26 @@ serve(async (req) => {
     }
 
     const userId = user.id; // SECURITY: Always use authenticated user's ID
+
+    // RATE LIMITING: Check per-user AI generation limits
+    const adminClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    const { data: rateLimitResult, error: rateLimitError } = await adminClient.rpc('check_ai_rate_limit', {
+      p_user_id: userId
+    });
+
+    if (rateLimitError) {
+      console.error("Rate limit check error:", rateLimitError);
+    } else if (rateLimitResult && !rateLimitResult.allowed) {
+      console.log("Rate limit exceeded for user:", userId, rateLimitResult);
+      return new Response(JSON.stringify({ 
+        error: rateLimitResult.message || "You've reached today's AI limit. Try again tomorrow.",
+        rateLimited: true,
+        errorType: rateLimitResult.error
+      }), {
+        status: 429,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     const body = await req.json();
     let profile = body.profile;
