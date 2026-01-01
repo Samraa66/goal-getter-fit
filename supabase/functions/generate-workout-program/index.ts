@@ -28,23 +28,47 @@ serve(async (req) => {
   }
 
   try {
+    // SECURITY: Authenticate user from JWT
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: 'No authorization header' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+    const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+
+    // Create client with user's auth context
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      global: { headers: { Authorization: authHeader } },
+    });
+
+    // SECURITY: Get authenticated user from JWT - never trust client-supplied userId
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError || !user) {
+      console.error("Auth error:", userError);
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const userId = user.id; // SECURITY: Always use authenticated user's ID
+
     const body = await req.json();
     let profile = body.profile;
     const weeklyActivities = body.weeklyActivities;
-    const userId = body.userId;
-    
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
-    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
     if (!LOVABLE_API_KEY) {
       throw new Error("LOVABLE_API_KEY is not configured");
     }
 
-    // If userId provided but no profile, fetch profile from database
-    if (!profile && userId && SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
-      console.log("Generate Workout Program: Fetching profile for user", userId);
-      const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    // Fetch profile from database using authenticated user's ID
+    if (!profile) {
+      console.log("Generate Workout Program: Fetching profile for authenticated user", userId);
       const { data: fetchedProfile, error } = await supabase
         .from("profiles")
         .select("*")
@@ -80,7 +104,6 @@ serve(async (req) => {
     const preferredSplit = profile.preferred_split || null;
     
     // ===== GENDER-BASED ADJUSTMENTS =====
-    // These are physiological generalizations, applied respectfully
     let genderNotes = "";
     let volumeAdjustment = 1.0;
     let recoveryNotes = "";
@@ -120,12 +143,10 @@ NEUTRAL PROGRAMMING (gender not specified):
     };
     const volumeMultiplier = volumeMap[experienceLevel] || 0.8;
     
-    // Intensity adjustment
-    const baseIntensity = gender === 'female' ? 0.9 : 1.0; // Slightly lighter starting weights for beginners
+    const baseIntensity = gender === 'female' ? 0.9 : 1.0;
     const weightFactor = weightKg < 60 ? 0.8 : weightKg > 90 ? 1.15 : 1.0;
     const intensityMultiplier = baseIntensity * weightFactor * volumeMultiplier;
     
-    // Sets per muscle group per week
     const baseSetsPerMuscle = experienceLevel === 'beginner' ? 8 
       : experienceLevel === 'intermediate' ? 12 
       : 16;
@@ -281,7 +302,6 @@ Output ONLY valid JSON. No markdown, no code blocks, no explanation.`;
 
     // Normalize workout types, filter out rest days, and ensure proper day assignment
     if (workoutProgram.workouts) {
-      // Filter out rest days and empty workouts
       let validWorkouts = workoutProgram.workouts
         .filter((workout: any) => {
           const type = (workout.workout_type || workout.name || '').toLowerCase();
@@ -298,7 +318,6 @@ Output ONLY valid JSON. No markdown, no code blocks, no explanation.`;
           workout_type: normalizeWorkoutType(workout.workout_type || workout.name),
         }));
 
-      // Force proper day assignment starting from Monday (1)
       const dayMappings: Record<number, number[]> = {
         1: [1],
         2: [1, 4],
@@ -311,7 +330,6 @@ Output ONLY valid JSON. No markdown, no code blocks, no explanation.`;
       const numWorkouts = validWorkouts.length;
       const targetDays = dayMappings[numWorkouts] || dayMappings[3];
 
-      // Reassign days to ensure they start from Monday
       validWorkouts = validWorkouts.map((workout: any, index: number) => ({
         ...workout,
         day_of_week: targetDays[index] !== undefined ? targetDays[index] : (index + 1),
@@ -368,12 +386,10 @@ function determineTrainingSplit(
   preferredSplit: string | null,
   sportsImpact: any
 ) {
-  // If user explicitly chose a split via Coach AI, respect it
   if (preferredSplit) {
     return buildSplitFromPreference(preferredSplit, requestedDays);
   }
   
-  // Default logic based on experience and availability
   if (experience === 'beginner') {
     if (requestedDays <= 3) {
       return {
@@ -483,23 +499,22 @@ function buildSplitFromPreference(preferredSplit: string, days: number) {
     };
   }
   
-  if (normalized.includes('bro') || normalized.includes('body_part')) {
-    return {
-      split: "Body Part Split",
-      daysPerWeek: Math.min(days, 5),
-      workoutStructure: "User preference: One muscle group per day"
-    };
-  }
-  
-  if (normalized.includes('full')) {
+  if (normalized.includes('full') && normalized.includes('body')) {
     return {
       split: "Full Body",
       daysPerWeek: Math.min(days, 3),
-      workoutStructure: "User preference: Full body workouts"
+      workoutStructure: "User preference: Full Body split"
     };
   }
   
-  // Default to PPL
+  if (normalized.includes('bro')) {
+    return {
+      split: "Bro Split",
+      daysPerWeek: Math.min(days, 5),
+      workoutStructure: "User preference: Classic Bro Split (one muscle group per day)"
+    };
+  }
+  
   return {
     split: "Push/Pull/Legs",
     daysPerWeek: Math.min(days, 6),
@@ -516,10 +531,10 @@ function normalizeWorkoutType(type: string): string {
   if (normalized.includes('chest')) return WORKOUT_TYPES.CHEST;
   if (normalized.includes('back')) return WORKOUT_TYPES.BACK;
   if (normalized.includes('shoulder')) return WORKOUT_TYPES.SHOULDERS;
-  if (normalized.includes('arm')) return WORKOUT_TYPES.ARMS;
+  if (normalized.includes('arm') || normalized.includes('bicep') || normalized.includes('tricep')) return WORKOUT_TYPES.ARMS;
   if (normalized.includes('upper')) return WORKOUT_TYPES.UPPER;
   if (normalized.includes('lower')) return WORKOUT_TYPES.LOWER;
-  if (normalized.includes('full') || normalized.includes('total')) return WORKOUT_TYPES.FULL_BODY;
+  if (normalized.includes('full') || normalized.includes('body')) return WORKOUT_TYPES.FULL_BODY;
   if (normalized.includes('cardio') || normalized.includes('hiit')) return WORKOUT_TYPES.CARDIO;
   
   return WORKOUT_TYPES.FULL_BODY;

@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -11,19 +12,47 @@ serve(async (req) => {
   }
 
   try {
-    const { image, mealType, profile } = await req.json();
+    // SECURITY: Authenticate user from JWT
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: 'No authorization header' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+    const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
 
     if (!LOVABLE_API_KEY) {
       throw new Error("LOVABLE_API_KEY is not configured");
     }
 
+    // Create client with user's auth context
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      global: { headers: { Authorization: authHeader } },
+    });
+
+    // SECURITY: Get authenticated user from JWT
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError || !user) {
+      console.error("Auth error:", userError);
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    console.log("Menu Scanner: Authenticated user", user.id);
+
+    const { image, mealType, profile } = await req.json();
+
     if (!image) {
       throw new Error("No image provided");
     }
 
     console.log("Menu Scanner: Analyzing menu image for", mealType);
-    console.log("Menu Scanner: User profile:", JSON.stringify(profile || {}, null, 2));
 
     // Calculate user targets
     const calorieTarget = profile?.daily_calorie_target || 2000;
@@ -154,18 +183,16 @@ Include 2-4 healthy choices. Be specific with calorie/protein estimates.`;
     const data = await response.json();
     const content = data.choices?.[0]?.message?.content;
 
-    console.log("Menu Scanner: Raw response:", content);
+    console.log("Menu Scanner: Raw response received");
 
     // Try to parse the JSON from the response
     let analysis;
     try {
-      // Extract JSON from markdown code blocks if present
       const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/) || [null, content];
       const jsonStr = jsonMatch[1].trim();
       analysis = JSON.parse(jsonStr);
     } catch (parseError) {
       console.error("Failed to parse AI response as JSON:", parseError);
-      // Return a fallback structure
       analysis = {
         summary: content || "Could not analyze the menu properly.",
         yourTargets: {
