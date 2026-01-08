@@ -131,37 +131,86 @@ serve(async (req) => {
     const fatTarget = Math.round((calorieTarget * 0.25) / 9);
     const carbTarget = Math.round((calorieTarget - (proteinTarget * 4) - (fatTarget * 9)) / 4);
 
-    // DYNAMIC MEAL COUNT based on user profile and goals
-    let mealCount = 4;
-    let mealTypes = ["breakfast", "lunch", "snack", "dinner"];
-    
-    if (fitnessGoal === 'muscle_gain' || fitnessGoal === 'gain_muscle') {
-      if (calorieTarget >= 2500) {
-        mealCount = 5;
-        mealTypes = ["breakfast", "morning_snack", "lunch", "afternoon_snack", "dinner"];
-      }
-    } else if (fitnessGoal === 'lose_weight' || fitnessGoal === 'fat_loss') {
-      if (calorieTarget <= 1500) {
-        mealCount = 3;
-        mealTypes = ["breakfast", "lunch", "dinner"];
-      }
-    }
-    
-    // Adjust for BMI
+    // DYNAMIC MEAL COUNT based on user profile, goals, gender, and calorie needs
+    // NOT fixed to 4 meals - completely personalized
     const bmi = weight / ((height / 100) ** 2);
-    if (bmi < 18.5 && weightGoal > weight) {
-      mealCount = Math.min(5, mealCount + 1);
-      if (!mealTypes.includes("morning_snack")) {
-        mealTypes = ["breakfast", "morning_snack", "lunch", "snack", "dinner"];
+    
+    // Calculate meal count based on multiple factors
+    let mealCount: number;
+    let mealTypes: string[];
+    
+    // Primary factor: calorie target
+    if (calorieTarget <= 1400) {
+      mealCount = 2;
+      mealTypes = ["lunch", "dinner"];
+    } else if (calorieTarget <= 1700) {
+      mealCount = 3;
+      mealTypes = ["breakfast", "lunch", "dinner"];
+    } else if (calorieTarget <= 2200) {
+      mealCount = 4;
+      mealTypes = ["breakfast", "lunch", "snack", "dinner"];
+    } else if (calorieTarget <= 2800) {
+      mealCount = 5;
+      mealTypes = ["breakfast", "morning_snack", "lunch", "afternoon_snack", "dinner"];
+    } else {
+      mealCount = 6;
+      mealTypes = ["breakfast", "morning_snack", "lunch", "afternoon_snack", "dinner", "evening_snack"];
+    }
+    
+    // Adjust for fitness goal
+    if (fitnessGoal === 'muscle_gain' || fitnessGoal === 'gain_muscle') {
+      // Bulking benefits from more frequent meals
+      if (mealCount < 4) mealCount = 4;
+      if (calorieTarget >= 3000 && mealCount < 5) mealCount = 5;
+      if (calorieTarget >= 3500 && mealCount < 6) mealCount = 6;
+    } else if (fitnessGoal === 'lose_weight' || fitnessGoal === 'fat_loss') {
+      // Cutting can use fewer meals for satiety
+      if (calorieTarget <= 1600 && mealCount > 3) mealCount = 3;
+      if (calorieTarget <= 1300 && mealCount > 2) mealCount = 2;
+    }
+    
+    // Gender adjustments
+    if (gender === 'female') {
+      // Women often have lower calorie needs, adjust accordingly
+      if (calorieTarget <= 1500 && mealCount > 3) {
+        mealCount = 3;
       }
     }
     
-    // High activity: add extra snack
+    // BMI adjustments
+    if (bmi < 18.5 && weightGoal > weight) {
+      // Underweight trying to gain: more meals
+      mealCount = Math.min(6, mealCount + 1);
+    } else if (bmi > 30 && weightGoal < weight) {
+      // Obese trying to lose: can manage with fewer meals
+      mealCount = Math.max(3, mealCount - 1);
+    }
+    
+    // High activity bonus
     if ((activityLevel === 'very_active' || activityLevel === 'extremely_active') && mealCount < 5) {
       mealCount = Math.min(5, mealCount + 1);
-      if (!mealTypes.includes("afternoon_snack") && !mealTypes.includes("morning_snack")) {
-        mealTypes.push("afternoon_snack");
-      }
+    }
+    
+    // Rebuild meal types based on final count
+    switch (mealCount) {
+      case 2:
+        mealTypes = ["lunch", "dinner"];
+        break;
+      case 3:
+        mealTypes = ["breakfast", "lunch", "dinner"];
+        break;
+      case 4:
+        mealTypes = ["breakfast", "lunch", "snack", "dinner"];
+        break;
+      case 5:
+        mealTypes = ["breakfast", "morning_snack", "lunch", "afternoon_snack", "dinner"];
+        break;
+      case 6:
+        mealTypes = ["breakfast", "morning_snack", "lunch", "afternoon_snack", "dinner", "evening_snack"];
+        break;
+      default:
+        mealTypes = ["breakfast", "lunch", "snack", "dinner"];
+        mealCount = 4;
     }
 
     console.log(`Dynamic meal plan: ${mealCount} meals for goal: ${fitnessGoal}, gender: ${gender}, BMI: ${bmi.toFixed(1)}`);

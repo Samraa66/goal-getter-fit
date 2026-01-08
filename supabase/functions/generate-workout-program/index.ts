@@ -339,22 +339,47 @@ Output ONLY valid JSON. No markdown, no code blocks, no explanation.`;
           workout_type: normalizeWorkoutType(workout.workout_type || workout.name),
         }));
 
+      // CRITICAL: Day 1 MUST have an active workout, never rest
+      // Day mappings ensure first workout is always Monday (day 1)
       const dayMappings: Record<number, number[]> = {
-        1: [1],
-        2: [1, 4],
-        3: [1, 3, 5],
-        4: [1, 2, 4, 5],
-        5: [1, 2, 3, 5, 6],
-        6: [1, 2, 3, 4, 5, 6],
+        1: [1],           // Single workout: Monday
+        2: [1, 4],        // 2 workouts: Mon, Thu
+        3: [1, 3, 5],     // 3 workouts: Mon, Wed, Fri
+        4: [1, 2, 4, 5],  // 4 workouts: Mon, Tue, Thu, Fri
+        5: [1, 2, 3, 5, 6], // 5 workouts: Mon-Wed, Fri-Sat
+        6: [1, 2, 3, 4, 5, 6], // 6 workouts: Mon-Sat
       };
 
       const numWorkouts = validWorkouts.length;
       const targetDays = dayMappings[numWorkouts] || dayMappings[3];
 
+      // Assign days ensuring day 1 (Monday) always gets the first active workout
       validWorkouts = validWorkouts.map((workout: any, index: number) => ({
         ...workout,
         day_of_week: targetDays[index] !== undefined ? targetDays[index] : (index + 1),
       }));
+
+      // SAFETY CHECK: Ensure day 1 has an active workout
+      const hasDay1Workout = validWorkouts.some((w: any) => w.day_of_week === 1);
+      if (!hasDay1Workout && validWorkouts.length > 0) {
+        // Force first workout to be on day 1
+        validWorkouts[0].day_of_week = 1;
+        console.log("SAFETY: Forced first workout to day 1 to prevent rest day start");
+      }
+
+      // Extra validation: if first workout is somehow rest-like, replace it
+      if (validWorkouts.length > 0) {
+        const firstWorkout = validWorkouts.find((w: any) => w.day_of_week === 1);
+        if (firstWorkout) {
+          const firstType = (firstWorkout.workout_type || '').toLowerCase();
+          if (firstType === 'rest' || firstType.includes('rest') || firstType.includes('recovery')) {
+            // Convert to active recovery / mobility
+            firstWorkout.workout_type = 'full_body';
+            firstWorkout.name = 'Active Recovery - Mobility';
+            console.log("SAFETY: Converted day 1 rest to active recovery");
+          }
+        }
+      }
 
       workoutProgram.workouts = validWorkouts;
     }
