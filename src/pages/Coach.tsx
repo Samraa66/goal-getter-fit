@@ -29,9 +29,10 @@ interface UserProfile {
 
 const SUGGESTIONS = [
   "This plan is too intense",
-  "I have a football match this week",
-  "I prefer Push/Pull/Legs",
-  "What should I eat tonight?"
+  "What should I eat tonight?",
+  "Can I swap today's workout?",
+  "Why is my protein so high?",
+  "I feel tired today"
 ];
 
 const WELCOME_MESSAGE = `Hey! I'm your Forme Coach. Tell me what's going on this week and I'll adjust your plan.`;
@@ -114,12 +115,26 @@ export default function Coach() {
 
       if (!response.ok) {
         if (response.status === 429) {
-          throw new Error("We're experiencing high demand. Please try again in a moment.");
+          // Rate limited - show friendly fallback
+          startAssistantResponse();
+          const fallbackMessage = "I'm a bit busy right now! Give me a moment and try again. 🙏";
+          await completeAssistantResponse(fallbackMessage);
+          setIsLoading(false);
+          return;
         }
         if (response.status === 402) {
-          throw new Error("Usage limit reached. Please try again later.");
+          startAssistantResponse();
+          const fallbackMessage = "You've hit your AI limit for today. Come back tomorrow for more coaching! 💪";
+          await completeAssistantResponse(fallbackMessage);
+          setIsLoading(false);
+          return;
         }
-        throw new Error("Something went wrong. Please try again.");
+        // Other errors - provide graceful fallback
+        startAssistantResponse();
+        const fallbackMessage = "I'm having a moment here. Could you try rephrasing that, or give me another shot in a few seconds? 🤔";
+        await completeAssistantResponse(fallbackMessage);
+        setIsLoading(false);
+        return;
       }
 
       // Start streaming response (adds empty assistant message to state)
@@ -132,69 +147,82 @@ export default function Coach() {
 
       if (reader) {
         let textBuffer = "";
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          textBuffer += decoder.decode(value, { stream: true });
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            textBuffer += decoder.decode(value, { stream: true });
 
-          let newlineIndex: number;
-          while ((newlineIndex = textBuffer.indexOf("\n")) !== -1) {
-            let line = textBuffer.slice(0, newlineIndex);
-            textBuffer = textBuffer.slice(newlineIndex + 1);
-            if (line.endsWith("\r")) line = line.slice(0, -1);
-            if (line.startsWith(":") || line.trim() === "") continue;
-            if (!line.startsWith("data: ")) continue;
-            const jsonStr = line.slice(6).trim();
-            if (jsonStr === "[DONE]") break;
-            try {
-              const parsed = JSON.parse(jsonStr);
-              const content = parsed.choices?.[0]?.delta?.content;
-              if (content) {
-                assistantContent += content;
-                updateLastAssistantMessage(assistantContent);
+            let newlineIndex: number;
+            while ((newlineIndex = textBuffer.indexOf("\n")) !== -1) {
+              let line = textBuffer.slice(0, newlineIndex);
+              textBuffer = textBuffer.slice(newlineIndex + 1);
+              if (line.endsWith("\r")) line = line.slice(0, -1);
+              if (line.startsWith(":") || line.trim() === "") continue;
+              if (!line.startsWith("data: ")) continue;
+              const jsonStr = line.slice(6).trim();
+              if (jsonStr === "[DONE]") break;
+              try {
+                const parsed = JSON.parse(jsonStr);
+                const content = parsed.choices?.[0]?.delta?.content;
+                if (content) {
+                  assistantContent += content;
+                  updateLastAssistantMessage(assistantContent);
+                }
+              } catch {
+                // Partial JSON, continue
               }
-            } catch {
-              // Partial JSON, continue
             }
+          }
+        } catch (streamError) {
+          console.error("Stream error:", streamError);
+          // If streaming fails but we have some content, use it
+          if (!assistantContent) {
+            assistantContent = "I lost my train of thought there. Could you ask me again? 😅";
           }
         }
       }
 
       // Complete the response (saves to DB)
-      if (assistantContent) {
-        await completeAssistantResponse(assistantContent);
+      // If no content was received, provide a fallback
+      if (!assistantContent || assistantContent.trim() === "") {
+        assistantContent = "I'm here to help! Could you tell me more about what you'd like to change or ask? 💪";
       }
+      await completeAssistantResponse(assistantContent);
 
       setIsLoading(false);
 
       // Now handle profile updates and regeneration after AI response completes
-      const result = await profileCheckPromise;
-      if (result.hasUpdates) {
-        // Refetch profile to get updated data
-        const { data } = await supabase
-          .from("profiles")
-          .select("*")
-          .eq("id", user.id)
-          .single();
-        if (data) setProfile(data as unknown as UserProfile);
-        
-        // Trigger regeneration if needed
-        if (result.needsMealRegeneration || result.needsWorkoutRegeneration) {
-          await triggerRegeneration(
-            user.id,
-            result.needsMealRegeneration || false,
-            result.needsWorkoutRegeneration || false
-          );
+      try {
+        const result = await profileCheckPromise;
+        if (result.hasUpdates) {
+          // Refetch profile to get updated data
+          const { data } = await supabase
+            .from("profiles")
+            .select("*")
+            .eq("id", user.id)
+            .single();
+          if (data) setProfile(data as unknown as UserProfile);
+          
+          // Trigger regeneration if needed
+          if (result.needsMealRegeneration || result.needsWorkoutRegeneration) {
+            await triggerRegeneration(
+              user.id,
+              result.needsMealRegeneration || false,
+              result.needsWorkoutRegeneration || false
+            );
+          }
         }
+      } catch (profileError) {
+        console.error("Profile update error:", profileError);
+        // Don't fail the whole message for profile updates
       }
     } catch (error) {
       console.error("Error sending message:", error);
-      toast({
-        title: "Couldn't send message",
-        description: error instanceof Error ? error.message : "Please try again.",
-        variant: "destructive"
-      });
-      removeLastMessage();
+      // Graceful degradation - still show a message instead of toast error
+      startAssistantResponse();
+      const fallbackMessage = "Something went a bit sideways. Let's try that again — what's on your mind? 🤝";
+      await completeAssistantResponse(fallbackMessage);
       setIsLoading(false);
     }
   };
