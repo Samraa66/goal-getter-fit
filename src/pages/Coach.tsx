@@ -98,11 +98,17 @@ export default function Coach() {
     const profileCheckPromise = checkForProfileUpdates(messageText, user.id);
     
     try {
+      // Get the current session token for authentication
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        throw new Error("No active session");
+      }
+
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-coach`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`
+          Authorization: `Bearer ${session.access_token}`
         },
         body: JSON.stringify({
           messages: messages.slice(1).concat([{ role: "user" as const, content: messageText }]).map(m => ({
