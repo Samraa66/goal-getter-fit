@@ -16,6 +16,12 @@ interface ProfileUpdateResult {
   message?: string;
 }
 
+// Helper to get session access token
+async function getAccessToken(): Promise<string | null> {
+  const { data: { session } } = await supabase.auth.getSession();
+  return session?.access_token || null;
+}
+
 export function useProfileUpdates() {
   const [isRegenerating, setIsRegenerating] = useState(false);
   const [regenerationType, setRegenerationType] = useState<'meal' | 'workout' | 'both' | null>(null);
@@ -25,13 +31,19 @@ export function useProfileUpdates() {
     userId: string
   ): Promise<ProfileUpdateResult> => {
     try {
+      const accessToken = await getAccessToken();
+      if (!accessToken) {
+        console.error("No active session for profile update check");
+        return { hasUpdates: false };
+      }
+
       const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/extract-profile-updates`,
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+            Authorization: `Bearer ${accessToken}`,
           },
           body: JSON.stringify({ message, userId }),
         }
@@ -101,6 +113,13 @@ export function useProfileUpdates() {
             
             console.log("Meal plan deleted, triggering regeneration");
             
+            // Get fresh access token for regeneration
+            const mealAccessToken = await getAccessToken();
+            if (!mealAccessToken) {
+              console.error("No active session for meal regeneration");
+              return { success: false, type: 'meal' };
+            }
+            
             // Trigger meal plan generation
             const response = await fetch(
               `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-meal-plan`,
@@ -108,7 +127,7 @@ export function useProfileUpdates() {
                 method: "POST",
                 headers: {
                   "Content-Type": "application/json",
-                  Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+                  Authorization: `Bearer ${mealAccessToken}`,
                 },
                 body: JSON.stringify({ 
                   userId, 
@@ -152,6 +171,13 @@ export function useProfileUpdates() {
             
             console.log("Workout program deactivated, triggering regeneration");
             
+            // Get fresh access token for regeneration
+            const workoutAccessToken = await getAccessToken();
+            if (!workoutAccessToken) {
+              console.error("No active session for workout regeneration");
+              return { success: false, type: 'workout' };
+            }
+            
             // Trigger workout program generation
             const response = await fetch(
               `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-workout-program`,
@@ -159,7 +185,7 @@ export function useProfileUpdates() {
                 method: "POST",
                 headers: {
                   "Content-Type": "application/json",
-                  Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+                  Authorization: `Bearer ${workoutAccessToken}`,
                 },
                 body: JSON.stringify({ 
                   userId,
