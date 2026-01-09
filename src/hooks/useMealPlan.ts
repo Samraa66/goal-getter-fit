@@ -95,14 +95,41 @@ export function useMealPlan(date: Date = new Date()) {
 
       if (profileError) throw profileError;
 
-      // Call the AI to generate meal plan
-      const response = await supabase.functions.invoke("generate-meal-plan", {
-        body: { profile, date: dateStr },
-      });
+      // Get the current session token
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        throw new Error("No active session");
+      }
 
-      if (response.error) throw new Error(response.error.message);
+      // Call the AI to generate meal plan with proper auth token
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-meal-plan`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ profile, date: dateStr }),
+        }
+      );
 
-      const generatedPlan = response.data;
+      // Handle rate limiting gracefully
+      if (response.status === 429) {
+        const errorData = await response.json();
+        const waitTime = errorData.error?.match(/(\d+) seconds/)?.[1] || "a few";
+        toast.error(`Please wait ${waitTime} seconds before generating again`, {
+          description: "Rate limit helps keep the service fast for everyone.",
+        });
+        return;
+      }
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Request failed: ${response.status}`);
+      }
+
+      const generatedPlan = await response.json();
 
       // Delete existing plan for this date if any
       if (mealPlan) {
@@ -154,7 +181,8 @@ export function useMealPlan(date: Date = new Date()) {
       toast.success("Meal plan generated!");
     } catch (error) {
       console.error("Error generating meal plan:", error);
-      toast.error("Failed to generate meal plan");
+      const message = error instanceof Error ? error.message : "Failed to generate meal plan";
+      toast.error(message);
     } finally {
       setIsGenerating(false);
     }
