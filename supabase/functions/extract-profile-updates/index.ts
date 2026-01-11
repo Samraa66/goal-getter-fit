@@ -67,13 +67,14 @@ serve(async (req) => {
     const { message } = await req.json();
 
     console.log("Extract Profile Updates: Analyzing message for authenticated user", userId);
+    console.log("Extract Profile Updates: User message:", message);
 
-    const extractionPrompt = `Analyze this user message and extract:
+    const extractionSystemPrompt = `You are a strict JSON information extractor.
+
+Analyze the user's message and extract:
 1. Fitness/nutrition PROFILE updates (permanent changes)
 2. Temporary weekly activity changes
 3. Direct PLAN MODIFICATION requests (change a specific meal or workout)
-
-User message: "${message}"
 
 ====== PROFILE FIELDS (permanent changes) ======
 - allergies: array of allergens (e.g., ["peanuts", "shellfish"])
@@ -101,12 +102,11 @@ MEAL MODIFICATION triggers (ANY of these should trigger needsMealRegeneration):
 - "Give me a different meal"
 - "This meal doesn't work for me"
 - "Swap this meal out"
-- **FOOD REQUESTS**: "I want [food]", "Give me [food]", "Add [food]"
+- FOOD REQUESTS: "I want [food]", "Give me [food]", "Add [food]"
   Examples: "I want salmon", "Give me pasta", "I want chicken today", "Can I have steak?"
 - "Make my lunch with [ingredient]"
 - "I'm craving [food]"
 - "How about [food] for dinner?"
-- ANY mention of wanting specific food in their plan
 
 WORKOUT MODIFICATION triggers:
 - "This workout is too hard" / "too intense"
@@ -115,8 +115,7 @@ WORKOUT MODIFICATION triggers:
 - "Change today's workout"
 - "I need an easier workout"
 - "This is too much"
-- "Remove [exercise]" / "No [exercise]" / "Skip [exercise]"
-- "Add more [muscle group]" / "Focus on [muscle group]"
+- "Remove squats" / "No deadlifts" / "Skip [exercise]"
 
 ====== DETECTION RULES ======
 1. "I prefer Push/Pull/Legs" → preferred_split: "push_pull_legs"
@@ -125,11 +124,8 @@ WORKOUT MODIFICATION triggers:
 4. "I have a football match this week" → weekly_activities (temporary)
 5. "This plan is too intense" / "too hard" → planModification with type "workout"
 6. "I don't want this meal" → planModification with type "meal"
-7. "I'm a beginner" → experience_level: "beginner"
-8. "I've been training for years" → experience_level: "advanced"
-9. "I want [food]" or "Give me [food]" → planModification with type "meal", context should include the requested food
-10. "Remove squats" / "No deadlifts" → planModification with type "workout"
-11. ANY specific food request = planModification type "meal" (e.g., "salmon", "pasta", "chicken")
+7. "I want [food]" or "Give me [food]" → planModification with type "meal" and context should contain the requested food
+8. "Remove squats" → planModification with type "workout"
 
 ====== OUTPUT FORMAT ======
 Return ONLY valid JSON:
@@ -140,7 +136,7 @@ Return ONLY valid JSON:
   "planModification": {
     "type": "meal" | "workout" | null,
     "reason": "user's reason for change",
-    "context": "any specific details like which meal or what adjustment"
+    "context": "specific details (e.g., requested food like salmon, or exercise like squats)"
   },
   "needsWorkoutRegeneration": true/false,
   "needsMealRegeneration": true/false
@@ -148,10 +144,10 @@ Return ONLY valid JSON:
 
 If nothing relevant found: {"hasUpdates": false}
 
-CRITICAL: 
-- Plan modification requests (meal/workout) should set needsMealRegeneration or needsWorkoutRegeneration to true
-- hasUpdates should be true even if ONLY a planModification is detected
-- Output ONLY valid JSON, no markdown`;
+CRITICAL:
+- Plan modification requests MUST set hasUpdates=true
+- Plan modification requests MUST set needsMealRegeneration/needsWorkoutRegeneration accordingly
+- Output ONLY valid JSON, no markdown, no code blocks.`;
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -162,8 +158,8 @@ CRITICAL:
       body: JSON.stringify({
         model: "google/gemini-2.5-flash",
         messages: [
-          { role: "system", content: extractionPrompt },
-          { role: "user", content: "Analyze and extract" },
+          { role: "system", content: extractionSystemPrompt },
+          { role: "user", content: message },
         ],
       }),
     });

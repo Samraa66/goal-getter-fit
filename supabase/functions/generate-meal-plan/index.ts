@@ -66,6 +66,8 @@ serve(async (req) => {
     const body = await req.json();
     let profile = body.profile;
     const date = body.date;
+    const isModification = !!body.isModification;
+    const modification = body.modification;
 
     if (!LOVABLE_API_KEY) {
       throw new Error("LOVABLE_API_KEY is not configured");
@@ -238,6 +240,10 @@ CRITICAL BUDGET RULES:
 1. Total daily meal cost MUST NOT exceed $${dailyBudget}
 2. If budget is tight, automatically substitute expensive items with affordable alternatives` : '';
 
+    const modificationNotes = isModification && modification?.type === 'meal' && modification?.context
+      ? `\nPLAN MODIFICATION REQUEST (MUST SATISFY):\n- Include ${modification.context} in at least one meal today (prefer lunch or dinner unless specified).\n- Respect allergies, disliked foods, dietary preference, and budget.\n`
+      : '';
+
     const mealTypesString = mealTypes.map(t => `"${t}"`).join(", ");
     const mealJsonTemplate = mealTypes.map(t => 
       `{"meal_type":"${t}","name":"string","description":"string","calories":number,"protein":number,"carbs":number,"fats":number,"recipe":"1. First action. 2. Second action. 3. Third action."}`
@@ -267,6 +273,7 @@ USER PROFILE:
 - Other Sports/Activities: ${otherSports.length > 0 ? otherSports.join(', ') : 'none'}
 ${dietaryInfo.length > 0 ? '\nDIETARY REQUIREMENTS:\n' + dietaryInfo.join('\n') : ''}
 ${budgetTierInfo}
+${modificationNotes}
 
 NUTRITIONAL TARGETS:
 - Daily Calories: ${calorieTarget} kcal

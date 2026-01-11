@@ -7,6 +7,7 @@ import { format } from "date-fns";
 interface ProfileUpdateResult {
   hasUpdates: boolean;
   updates?: Record<string, any>;
+  weeklyActivities?: { activities?: string[]; notes?: string };
   needsMealRegeneration?: boolean;
   needsWorkoutRegeneration?: boolean;
   planModification?: {
@@ -82,16 +83,36 @@ export function useProfileUpdates() {
   ): Promise<boolean> => {
     try {
       // Delete existing plan for this date if any
-      const { data: existingPlan } = await supabase
+      const { data: existingPlan, error: existingPlanError } = await supabase
         .from("meal_plans")
         .select("id")
         .eq("user_id", userId)
         .eq("plan_date", dateStr)
         .maybeSingle();
 
+      if (existingPlanError) {
+        console.error("Failed to check existing meal plan:", existingPlanError);
+        return false;
+      }
+
       if (existingPlan) {
-        await supabase.from("meals").delete().eq("meal_plan_id", existingPlan.id);
-        await supabase.from("meal_plans").delete().eq("id", existingPlan.id);
+        const { error: deleteMealsError } = await supabase
+          .from("meals")
+          .delete()
+          .eq("meal_plan_id", existingPlan.id);
+        if (deleteMealsError) {
+          console.error("Failed to delete existing meals:", deleteMealsError);
+          return false;
+        }
+
+        const { error: deletePlanError } = await supabase
+          .from("meal_plans")
+          .delete()
+          .eq("id", existingPlan.id);
+        if (deletePlanError) {
+          console.error("Failed to delete existing meal plan:", deletePlanError);
+          return false;
+        }
       }
 
       // Save the new meal plan
@@ -225,7 +246,12 @@ export function useProfileUpdates() {
   const triggerRegeneration = useCallback(async (
     userId: string,
     regenerateMeals: boolean,
-    regenerateWorkouts: boolean
+    regenerateWorkouts: boolean,
+    options?: {
+      date?: string;
+      weeklyActivities?: ProfileUpdateResult["weeklyActivities"];
+      planModification?: ProfileUpdateResult["planModification"];
+    }
   ): Promise<{ success: boolean; error?: string }> => {
     if (!regenerateMeals && !regenerateWorkouts) {
       return { success: true };
@@ -242,7 +268,9 @@ export function useProfileUpdates() {
     }
 
     const promises: Promise<{ success: boolean; type: string; error?: string }>[] = [];
-    const today = format(new Date(), "yyyy-MM-dd");
+    const targetDate = options?.date || format(new Date(), "yyyy-MM-dd");
+    const planModification = options?.planModification;
+    const weeklyActivities = options?.weeklyActivities;
 
     if (regenerateMeals) {
       promises.push(
@@ -266,9 +294,10 @@ export function useProfileUpdates() {
                   "Content-Type": "application/json",
                   Authorization: `Bearer ${mealAccessToken}`,
                 },
-                body: JSON.stringify({ 
-                  date: today,
-                  isModification: true 
+                body: JSON.stringify({
+                  date: targetDate,
+                  isModification: true,
+                  modification: planModification,
                 }),
               }
             );
@@ -288,7 +317,7 @@ export function useProfileUpdates() {
             }
 
             // CRITICAL: Actually save the generated plan to the database
-            const saved = await saveMealPlan(userId, generatedPlan, today);
+            const saved = await saveMealPlan(userId, generatedPlan, targetDate);
             
             if (!saved) {
               return { success: false, type: 'meal', error: 'Failed to save meal plan' };
@@ -328,8 +357,10 @@ export function useProfileUpdates() {
                   "Content-Type": "application/json",
                   Authorization: `Bearer ${workoutAccessToken}`,
                 },
-                body: JSON.stringify({ 
-                  isModification: true 
+                body: JSON.stringify({
+                  isModification: true,
+                  weeklyActivities,
+                  modification: planModification,
                 }),
               }
             );
