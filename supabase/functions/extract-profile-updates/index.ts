@@ -94,13 +94,19 @@ User message: "${message}"
 ====== PLAN MODIFICATION REQUESTS (immediate change) ======
 Detect when user wants to CHANGE their current meal or workout plan:
 
-MEAL MODIFICATION triggers:
+MEAL MODIFICATION triggers (ANY of these should trigger needsMealRegeneration):
 - "I don't want this dinner" / "change my dinner"
 - "Can I eat something else for lunch?"
 - "I don't like today's breakfast"
 - "Give me a different meal"
 - "This meal doesn't work for me"
 - "Swap this meal out"
+- **FOOD REQUESTS**: "I want [food]", "Give me [food]", "Add [food]"
+  Examples: "I want salmon", "Give me pasta", "I want chicken today", "Can I have steak?"
+- "Make my lunch with [ingredient]"
+- "I'm craving [food]"
+- "How about [food] for dinner?"
+- ANY mention of wanting specific food in their plan
 
 WORKOUT MODIFICATION triggers:
 - "This workout is too hard" / "too intense"
@@ -109,6 +115,8 @@ WORKOUT MODIFICATION triggers:
 - "Change today's workout"
 - "I need an easier workout"
 - "This is too much"
+- "Remove [exercise]" / "No [exercise]" / "Skip [exercise]"
+- "Add more [muscle group]" / "Focus on [muscle group]"
 
 ====== DETECTION RULES ======
 1. "I prefer Push/Pull/Legs" → preferred_split: "push_pull_legs"
@@ -119,6 +127,9 @@ WORKOUT MODIFICATION triggers:
 6. "I don't want this meal" → planModification with type "meal"
 7. "I'm a beginner" → experience_level: "beginner"
 8. "I've been training for years" → experience_level: "advanced"
+9. "I want [food]" or "Give me [food]" → planModification with type "meal", context should include the requested food
+10. "Remove squats" / "No deadlifts" → planModification with type "workout"
+11. ANY specific food request = planModification type "meal" (e.g., "salmon", "pasta", "chicken")
 
 ====== OUTPUT FORMAT ======
 Return ONLY valid JSON:
