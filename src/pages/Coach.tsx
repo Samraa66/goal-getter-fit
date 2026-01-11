@@ -112,9 +112,14 @@ export default function Coach() {
       );
 
       if (!regenResult.success) {
-        await completeAssistantResponse(
-          `I couldn't update your plan yet. ${regenResult.error ? `(${regenResult.error})` : "Please try again."}`
-        );
+        // Check if this is a rate limit / daily limit error
+        const isRateLimited = regenResult.error?.toLowerCase().includes("limit") || 
+                              regenResult.error?.toLowerCase().includes("429");
+        const friendlyError = isRateLimited
+          ? "You've reached your daily AI limit. Your current plan is still active — check back tomorrow for changes! 💪"
+          : `I couldn't update your plan right now. ${regenResult.error ? `(${regenResult.error})` : "Please try again."}`;
+        
+        await completeAssistantResponse(friendlyError);
         setIsLoading(false);
         return;
       }
