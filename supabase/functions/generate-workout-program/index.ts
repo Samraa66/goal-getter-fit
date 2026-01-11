@@ -82,6 +82,8 @@ serve(async (req) => {
     const body = await req.json();
     let profile = body.profile;
     const weeklyActivities = body.weeklyActivities;
+    const isModification = !!body.isModification;
+    const modification = body.modification;
 
     if (!LOVABLE_API_KEY) {
       throw new Error("LOVABLE_API_KEY is not configured");
@@ -185,6 +187,10 @@ NEUTRAL PROGRAMMING (gender not specified):
     
     console.log(`Selected split: ${split}, ${daysPerWeek} days/week, gender: ${gender}`);
 
+    const modificationNotes = isModification && modification?.type === 'workout' && (modification?.context || modification?.reason)
+      ? `\n====== PLAN MODIFICATION REQUEST (MUST APPLY) ======\n${modification.context || modification.reason}\n- If the request is to remove an exercise (e.g., "remove squats"), do not include it and provide a close alternative.\n- If the request is to make it easier/harder, adjust volume/intensity accordingly.\n`
+      : '';
+
     // ===== BUILD AI PROMPT =====
     const systemPrompt = `You are an elite strength & conditioning coach. Generate a practical, gym-culture-aligned workout program.
 
@@ -213,6 +219,7 @@ ${workoutStructure}
 ====== SPORTS & WEEKLY ACTIVITIES ======
 ${sportsImpact.guidance}
 ${recoveryNotes}
+${modificationNotes}
 
 ====== CRITICAL RULES ======
 1. USE STANDARD WORKOUT NAMES:

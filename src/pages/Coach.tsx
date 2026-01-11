@@ -93,10 +93,54 @@ export default function Coach() {
     
     // Add user message (saves to DB)
     await addUserMessage(messageText);
-    
-    // Check for profile updates and plan modifications
-    const profileCheckPromise = checkForProfileUpdates(messageText, user.id);
-    
+
+    // Check for profile updates / plan modifications FIRST (so we don't "promise" changes that fail)
+    const profileUpdateResult = await checkForProfileUpdates(messageText, user.id);
+
+    // If this is an explicit plan modification request, apply it authoritatively and respond only on success.
+    if (profileUpdateResult.planModification?.type) {
+      startAssistantResponse();
+
+      const regenResult = await triggerRegeneration(
+        user.id,
+        profileUpdateResult.needsMealRegeneration || false,
+        profileUpdateResult.needsWorkoutRegeneration || false,
+        {
+          planModification: profileUpdateResult.planModification,
+          weeklyActivities: profileUpdateResult.weeklyActivities,
+        }
+      );
+
+      if (!regenResult.success) {
+        await completeAssistantResponse(
+          `I couldn't update your plan yet. ${regenResult.error ? `(${regenResult.error})` : "Please try again."}`
+        );
+        setIsLoading(false);
+        return;
+      }
+
+      // Success: refetch profile (in case the message also contained profile updates)
+      try {
+        const { data } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", user.id)
+          .single();
+        if (data) setProfile(data as unknown as UserProfile);
+      } catch (e) {
+        console.error("Profile refetch error:", e);
+      }
+
+      const confirmation =
+        profileUpdateResult.planModification.type === "meal"
+          ? `Done — I updated today's meals to include ${profileUpdateResult.planModification.context || "your request"}. Check the Meals tab.`
+          : "Done — I updated your workout plan. Check the Workouts tab.";
+
+      await completeAssistantResponse(confirmation);
+      setIsLoading(false);
+      return;
+    }
+
     try {
       // Get the current session token for authentication
       const { data: { session } } = await supabase.auth.getSession();
@@ -198,10 +242,9 @@ export default function Coach() {
 
       setIsLoading(false);
 
-      // Now handle profile updates and regeneration after AI response completes
+      // Apply profile updates / regenerations AFTER AI response (non-plan-modification cases)
       try {
-        const result = await profileCheckPromise;
-        if (result.hasUpdates) {
+        if (profileUpdateResult.hasUpdates) {
           // Refetch profile to get updated data
           const { data } = await supabase
             .from("profiles")
@@ -209,13 +252,16 @@ export default function Coach() {
             .eq("id", user.id)
             .single();
           if (data) setProfile(data as unknown as UserProfile);
-          
+
           // Trigger regeneration if needed
-          if (result.needsMealRegeneration || result.needsWorkoutRegeneration) {
+          if (profileUpdateResult.needsMealRegeneration || profileUpdateResult.needsWorkoutRegeneration) {
             await triggerRegeneration(
               user.id,
-              result.needsMealRegeneration || false,
-              result.needsWorkoutRegeneration || false
+              profileUpdateResult.needsMealRegeneration || false,
+              profileUpdateResult.needsWorkoutRegeneration || false,
+              {
+                weeklyActivities: profileUpdateResult.weeklyActivities,
+              }
             );
           }
         }
