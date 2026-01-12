@@ -289,8 +289,8 @@ export default function Coach() {
   // Show loading state while fetching
   if (isLoadingSessions && isLoadingMessages) {
     return (
-      <AppLayout>
-        <div className="dark flex flex-col h-[100dvh] bg-background items-center justify-center">
+      <AppLayout hideNav>
+        <div className="dark fixed inset-0 flex flex-col bg-background items-center justify-center">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
           <p className="mt-4 text-muted-foreground">Loading your conversation...</p>
         </div>
@@ -299,8 +299,8 @@ export default function Coach() {
   }
 
   return (
-    <AppLayout>
-      <div className="dark flex h-[100dvh] bg-background overflow-hidden">
+    <AppLayout hideNav>
+      <div className="dark fixed inset-0 flex bg-background">
         {/* Chat History Sidebar - Slide over on mobile */}
         <div
           className={cn(
@@ -410,8 +410,8 @@ export default function Coach() {
             </div>
           )}
 
-          {/* Input */}
-          <div className="flex-shrink-0 p-4 border-t border-border pb-24 bg-background">
+          {/* Input - Fixed to bottom with safe area */}
+          <div className="flex-shrink-0 p-4 border-t border-border bg-background pb-[env(safe-area-inset-bottom,16px)]">
             <form onSubmit={handleSubmit} className="flex gap-2">
               <Input
                 value={input}
