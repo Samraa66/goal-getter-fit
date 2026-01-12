@@ -1,4 +1,5 @@
 import { AppLayout } from "@/components/layout/AppLayout";
+import { PageContainer } from "@/components/layout/PageContainer";
 import { ProgressRing } from "@/components/dashboard/ProgressRing";
 import { QuickStats } from "@/components/dashboard/QuickStats";
 import { MealCard } from "@/components/meals/MealCard";
@@ -102,7 +103,7 @@ export default function Index() {
 
   return (
     <AppLayout>
-      <div className="dark bg-background">
+      <PageContainer>
         {/* Header */}
         <div className="px-6 pt-12 pb-6 flex items-start justify-between">
           <div>
@@ -239,7 +240,10 @@ export default function Index() {
             </div>
           )}
         </div>
-      </div>
+        
+        {/* Bottom spacer for content */}
+        <div className="h-6" />
+      </PageContainer>
     </AppLayout>
   );
 }

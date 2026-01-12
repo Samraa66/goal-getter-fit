@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
+import { PageContainer } from "@/components/layout/PageContainer";
 import { WorkoutCard } from "@/components/workouts/WorkoutCard";
 import { ActiveWorkout } from "@/components/workouts/ActiveWorkout";
 import { WorkoutComplete } from "@/components/workouts/WorkoutComplete";
@@ -290,7 +291,7 @@ export default function Workouts() {
 
   return (
     <AppLayout>
-      <div className="dark bg-background pb-6">
+      <PageContainer>
         {/* Header */}
         <div className="px-6 pt-12 pb-4">
           <h1 className="text-2xl font-bold text-foreground">Workouts</h1>
@@ -503,7 +504,10 @@ export default function Workouts() {
             )}
           </TabsContent>
         </Tabs>
-      </div>
+        
+        {/* Bottom spacer */}
+        <div className="h-6" />
+      </PageContainer>
     </AppLayout>
   );
 }
