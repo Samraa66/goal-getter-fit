@@ -141,10 +141,12 @@ export default function Coach() {
         console.error("Profile refetch error:", e);
       }
 
-      const confirmation =
+      // Use the coach message from the swap result, or generate a default one
+      const confirmation = regenResult.coachMessage || (
         profileUpdateResult.planModification.type === "meal"
-          ? `Done — I updated today's meals to include ${profileUpdateResult.planModification.context || "your request"}. Check the Meals tab.`
-          : "Done — I updated your workout plan. Check the Workouts tab.";
+          ? `I updated your ${profileUpdateResult.planModification.targetMealType || "meal"}${profileUpdateResult.planModification.context ? ` to include ${profileUpdateResult.planModification.context}` : ""}. Let me know if you want to change another meal.`
+          : "Done — I updated your workout plan. Check the Workouts tab."
+      );
 
       await completeAssistantResponse(confirmation);
       setIsLoading(false);
