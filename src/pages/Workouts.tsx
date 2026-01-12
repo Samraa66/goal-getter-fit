@@ -5,7 +5,8 @@ import { ActiveWorkout } from "@/components/workouts/ActiveWorkout";
 import { WorkoutComplete } from "@/components/workouts/WorkoutComplete";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Calendar, TrendingUp, Loader2, Sparkles, Edit3, Lock, Flame, Dumbbell, Clock } from "lucide-react";
+import { Calendar, TrendingUp, Loader2, Sparkles, Edit3, Lock, Flame, Dumbbell, Clock, Leaf } from "lucide-react";
+import { RestDayCard } from "@/components/workouts/RestDayCard";
 import { useWorkoutProgram } from "@/hooks/useWorkoutProgram";
 import { useWorkoutHistory } from "@/hooks/useWorkoutHistory";
 import { useStreak } from "@/hooks/useStreak";
@@ -365,10 +366,8 @@ export default function Workouts() {
                 </Button>
               </>
             ) : program ? (
-              <div className="flex flex-col items-center justify-center py-12 text-center">
-                <Calendar className="h-12 w-12 text-muted-foreground mb-4" />
-                <p className="text-muted-foreground mb-4">Rest day! No workout scheduled for today.</p>
-              </div>
+              <RestDayCard />
+            
             ) : (
               <EmptyState />
             )}
