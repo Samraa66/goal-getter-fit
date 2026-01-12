@@ -1,14 +1,16 @@
 import { useState, useRef, useEffect } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { ChatMessage } from "@/components/chat/ChatMessage";
+import { ChatHistorySidebar } from "@/components/coach/ChatHistorySidebar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Send, Sparkles, Loader2, RefreshCw } from "lucide-react";
+import { Send, Sparkles, Loader2, RefreshCw, History, Menu } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { useProfileUpdates } from "@/hooks/useProfileUpdates";
-import { useCoachChat } from "@/hooks/useCoachChat";
+import { useChatSessions } from "@/hooks/useChatSessions";
+import { cn } from "@/lib/utils";
 
 interface UserProfile {
   fitness_goal: string | null;
@@ -35,8 +37,6 @@ const SUGGESTIONS = [
   "I feel tired today"
 ];
 
-const WELCOME_MESSAGE = `Hey! I'm your Forme Coach. Tell me what's going on this week and I'll adjust your plan.`;
-
 export default function Coach() {
   const { user } = useAuth();
   const { 
@@ -46,19 +46,25 @@ export default function Coach() {
     regenerationType 
   } = useProfileUpdates();
   const {
+    sessions,
+    currentSessionId,
     messages,
     isLoading,
-    isLoadingHistory,
+    isLoadingSessions,
+    isLoadingMessages,
     setIsLoading,
+    selectSession,
+    startNewChat,
+    deleteSession,
     addUserMessage,
     startAssistantResponse,
     updateLastAssistantMessage,
     completeAssistantResponse,
-    removeLastMessage,
-  } = useCoachChat();
+  } = useChatSessions();
   
   const [input, setInput] = useState("");
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
@@ -94,10 +100,10 @@ export default function Coach() {
     // Add user message (saves to DB)
     await addUserMessage(messageText);
 
-    // Check for profile updates / plan modifications FIRST (so we don't "promise" changes that fail)
+    // Check for profile updates / plan modifications FIRST
     const profileUpdateResult = await checkForProfileUpdates(messageText, user.id);
 
-    // If this is an explicit plan modification request, apply it authoritatively and respond only on success.
+    // If this is an explicit plan modification request
     if (profileUpdateResult.planModification?.type) {
       startAssistantResponse();
 
@@ -112,7 +118,6 @@ export default function Coach() {
       );
 
       if (!regenResult.success) {
-        // Check if this is a rate limit / daily limit error
         const isRateLimited = regenResult.error?.toLowerCase().includes("limit") || 
                               regenResult.error?.toLowerCase().includes("429");
         const friendlyError = isRateLimited
@@ -124,7 +129,7 @@ export default function Coach() {
         return;
       }
 
-      // Success: refetch profile (in case the message also contained profile updates)
+      // Success: refetch profile
       try {
         const { data } = await supabase
           .from("profiles")
@@ -147,7 +152,6 @@ export default function Coach() {
     }
 
     try {
-      // Get the current session token for authentication
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) {
         throw new Error("No active session");
@@ -170,7 +174,6 @@ export default function Coach() {
 
       if (!response.ok) {
         if (response.status === 429) {
-          // Rate limited - show friendly fallback
           startAssistantResponse();
           const fallbackMessage = "I'm a bit busy right now! Give me a moment and try again. 🙏";
           await completeAssistantResponse(fallbackMessage);
@@ -184,7 +187,6 @@ export default function Coach() {
           setIsLoading(false);
           return;
         }
-        // Other errors - provide graceful fallback
         startAssistantResponse();
         const fallbackMessage = "I'm having a moment here. Could you try rephrasing that, or give me another shot in a few seconds? 🤔";
         await completeAssistantResponse(fallbackMessage);
@@ -192,10 +194,8 @@ export default function Coach() {
         return;
       }
 
-      // Start streaming response (adds empty assistant message to state)
       startAssistantResponse();
 
-      // Handle streaming response
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
       let assistantContent = "";
@@ -231,15 +231,12 @@ export default function Coach() {
           }
         } catch (streamError) {
           console.error("Stream error:", streamError);
-          // If streaming fails but we have some content, use it
           if (!assistantContent) {
             assistantContent = "I lost my train of thought there. Could you ask me again? 😅";
           }
         }
       }
 
-      // Complete the response (saves to DB)
-      // If no content was received, provide a fallback
       if (!assistantContent || assistantContent.trim() === "") {
         assistantContent = "I'm here to help! Could you tell me more about what you'd like to change or ask? 💪";
       }
@@ -247,10 +244,9 @@ export default function Coach() {
 
       setIsLoading(false);
 
-      // Apply profile updates / regenerations AFTER AI response (non-plan-modification cases)
+      // Apply profile updates after AI response
       try {
         if (profileUpdateResult.hasUpdates) {
-          // Refetch profile to get updated data
           const { data } = await supabase
             .from("profiles")
             .select("*")
@@ -258,7 +254,6 @@ export default function Coach() {
             .single();
           if (data) setProfile(data as unknown as UserProfile);
 
-          // Trigger regeneration if needed
           if (profileUpdateResult.needsMealRegeneration || profileUpdateResult.needsWorkoutRegeneration) {
             await triggerRegeneration(
               user.id,
@@ -272,11 +267,9 @@ export default function Coach() {
         }
       } catch (profileError) {
         console.error("Profile update error:", profileError);
-        // Don't fail the whole message for profile updates
       }
     } catch (error) {
       console.error("Error sending message:", error);
-      // Graceful degradation - still show a message instead of toast error
       startAssistantResponse();
       const fallbackMessage = "Something went a bit sideways. Let's try that again — what's on your mind? 🤝";
       await completeAssistantResponse(fallbackMessage);
@@ -289,14 +282,13 @@ export default function Coach() {
     sendMessage(input);
   };
 
-  // Determine if input should be disabled
   const inputDisabled = isLoading || isRegenerating;
 
-  // Show loading state while fetching chat history
-  if (isLoadingHistory) {
+  // Show loading state while fetching
+  if (isLoadingSessions && isLoadingMessages) {
     return (
       <AppLayout>
-        <div className="dark flex flex-col h-screen bg-background items-center justify-center">
+        <div className="dark flex flex-col h-[100dvh] bg-background items-center justify-center">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
           <p className="mt-4 text-muted-foreground">Loading your conversation...</p>
         </div>
@@ -306,90 +298,140 @@ export default function Coach() {
 
   return (
     <AppLayout>
-      <div className="dark flex flex-col h-screen bg-background">
-        {/* Header */}
-        <div className="px-6 pt-12 pb-4 border-b border-border">
-          <div className="flex items-center gap-3">
-            <div className="relative">
-              <div className="absolute inset-0 bg-primary/30 rounded-full blur-md" />
-              <div className="relative rounded-full bg-gradient-to-br from-primary to-primary/80 p-2.5">
-                <Sparkles className="h-5 w-5 text-primary-foreground" />
+      <div className="dark flex h-[100dvh] bg-background overflow-hidden">
+        {/* Chat History Sidebar - Slide over on mobile */}
+        <div
+          className={cn(
+            "fixed inset-y-0 left-0 z-50 transform transition-transform duration-300 ease-in-out lg:relative lg:transform-none",
+            showHistory ? "translate-x-0" : "-translate-x-full lg:translate-x-0 lg:hidden"
+          )}
+        >
+          {showHistory && (
+            <>
+              {/* Backdrop */}
+              <div
+                className="fixed inset-0 bg-black/50 lg:hidden"
+                onClick={() => setShowHistory(false)}
+              />
+              <ChatHistorySidebar
+                sessions={sessions}
+                currentSessionId={currentSessionId}
+                onSelectSession={(id) => {
+                  selectSession(id);
+                  setShowHistory(false);
+                }}
+                onNewChat={() => {
+                  startNewChat();
+                  setShowHistory(false);
+                }}
+                onDeleteSession={deleteSession}
+                onClose={() => setShowHistory(false)}
+                isLoading={isLoadingSessions}
+              />
+            </>
+          )}
+        </div>
+
+        {/* Main Chat Area */}
+        <div className="flex flex-col flex-1 min-w-0 h-full">
+          {/* Header */}
+          <div className="flex-shrink-0 px-4 sm:px-6 pt-12 pb-4 border-b border-border">
+            <div className="flex items-center gap-3">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="shrink-0"
+                onClick={() => setShowHistory(true)}
+              >
+                <History className="h-5 w-5" />
+              </Button>
+              <div className="relative shrink-0">
+                <div className="absolute inset-0 bg-primary/30 rounded-full blur-md" />
+                <div className="relative rounded-full bg-gradient-to-br from-primary to-primary/80 p-2.5">
+                  <Sparkles className="h-5 w-5 text-primary-foreground" />
+                </div>
+              </div>
+              <div className="min-w-0">
+                <h1 className="text-xl font-bold text-foreground truncate">Your AI Coach</h1>
+                <p className="text-sm text-muted-foreground truncate">Adjust your workouts and nutrition</p>
               </div>
             </div>
-            <div>
-              <h1 className="text-xl font-bold text-foreground">Your AI Coach</h1>
-              <p className="text-sm text-muted-foreground">Adjust your workouts and nutrition for this week</p>
+          </div>
+
+          {/* Regeneration Banner */}
+          {isRegenerating && (
+            <div className="flex-shrink-0 px-4 sm:px-6 py-3 bg-primary/10 border-b border-primary/20 flex items-center gap-3">
+              <RefreshCw className="h-4 w-4 animate-spin text-primary shrink-0" />
+              <span className="text-sm text-primary font-medium truncate">
+                {regenerationType === 'meal' && "Updating your meal plan..."}
+                {regenerationType === 'workout' && "Updating your workout program..."}
+                {regenerationType === 'both' && "Updating your plans..."}
+              </span>
             </div>
-          </div>
-        </div>
-
-        {/* Regeneration Banner */}
-        {isRegenerating && (
-          <div className="px-6 py-3 bg-primary/10 border-b border-primary/20 flex items-center gap-3">
-            <RefreshCw className="h-4 w-4 animate-spin text-primary" />
-            <span className="text-sm text-primary font-medium">
-              {regenerationType === 'meal' && "Updating your meal plan..."}
-              {regenerationType === 'workout' && "Updating your workout program..."}
-              {regenerationType === 'both' && "Updating your plans..."}
-            </span>
-          </div>
-        )}
-
-        {/* Messages */}
-        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4 scrollbar-hide text-destructive-foreground">
-          {messages.map((message, index) => (
-            <ChatMessage key={index} role={message.role} content={message.content} />
-          ))}
-          {isLoading && messages[messages.length - 1]?.role !== "assistant" && (
-            <ChatMessage role="assistant" content="" isLoading />
           )}
-          <div ref={messagesEndRef} />
-        </div>
 
-        {/* Suggestions (only show when few messages and not loading) */}
-        {messages.length <= 2 && !inputDisabled && (
-          <div className="px-6 py-3 border-t border-border/50 bg-background/50">
-            <p className="text-xs text-muted-foreground mb-3">Try saying:</p>
-            <div className="flex flex-wrap gap-2">
-              {SUGGESTIONS.map((suggestion) => (
-                <Button
-                  key={suggestion}
-                  variant="outline"
-                  size="sm"
-                  onClick={() => sendMessage(suggestion)}
-                  disabled={inputDisabled}
-                  className="text-xs bg-card hover:bg-accent border-border/50 text-foreground"
-                >
-                  {suggestion}
-                </Button>
-              ))}
-            </div>
+          {/* Messages */}
+          <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 space-y-4">
+            {isLoadingMessages ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : (
+              messages.map((message, index) => (
+                <ChatMessage key={index} role={message.role} content={message.content} />
+              ))
+            )}
+            {isLoading && messages[messages.length - 1]?.role !== "assistant" && (
+              <ChatMessage role="assistant" content="" isLoading />
+            )}
+            <div ref={messagesEndRef} />
           </div>
-        )}
 
-        {/* Input */}
-        <div className="p-4 border-t border-border pb-24 bg-background">
-          <form onSubmit={handleSubmit} className="flex gap-2">
-            <Input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder={isRegenerating ? "Coach is updating your plan..." : "Tell me what you want to change…"}
-              className="flex-1 bg-card border-border text-foreground placeholder:text-muted-foreground"
-              disabled={inputDisabled}
-            />
-            <Button
-              type="submit"
-              size="icon"
-              className="gradient-primary shadow-lg shadow-primary/25"
-              disabled={!input.trim() || inputDisabled}
-            >
-              {isRegenerating ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Send className="h-4 w-4" />
-              )}
-            </Button>
-          </form>
+          {/* Suggestions (only show when few messages and not loading) */}
+          {messages.length <= 2 && !inputDisabled && (
+            <div className="flex-shrink-0 px-4 sm:px-6 py-3 border-t border-border/50 bg-background/50">
+              <p className="text-xs text-muted-foreground mb-3">Try saying:</p>
+              <div className="flex flex-wrap gap-2">
+                {SUGGESTIONS.map((suggestion) => (
+                  <Button
+                    key={suggestion}
+                    variant="outline"
+                    size="sm"
+                    onClick={() => sendMessage(suggestion)}
+                    disabled={inputDisabled}
+                    className="text-xs bg-card hover:bg-accent border-border/50 text-foreground"
+                  >
+                    {suggestion}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Input */}
+          <div className="flex-shrink-0 p-4 border-t border-border pb-24 bg-background">
+            <form onSubmit={handleSubmit} className="flex gap-2">
+              <Input
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder={isRegenerating ? "Coach is updating your plan..." : "Tell me what you want to change…"}
+                className="flex-1 bg-card border-border text-foreground placeholder:text-muted-foreground"
+                disabled={inputDisabled}
+              />
+              <Button
+                type="submit"
+                size="icon"
+                className="gradient-primary shadow-lg shadow-primary/25 shrink-0"
+                disabled={!input.trim() || inputDisabled}
+              >
+                {isRegenerating ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
+              </Button>
+            </form>
+          </div>
         </div>
       </div>
     </AppLayout>
