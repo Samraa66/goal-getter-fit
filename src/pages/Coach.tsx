@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
+import { PageContainer } from "@/components/layout/PageContainer";
 import { ChatMessage } from "@/components/chat/ChatMessage";
 import { ChatHistorySidebar } from "@/components/coach/ChatHistorySidebar";
 import { Button } from "@/components/ui/button";
@@ -290,17 +291,17 @@ export default function Coach() {
   if (isLoadingSessions && isLoadingMessages) {
     return (
       <AppLayout>
-        <div className="dark flex flex-col h-[calc(100dvh-56px-env(safe-area-inset-bottom,0px))] bg-background items-center justify-center">
+        <PageContainer className="items-center justify-center" scrollable={false}>
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
           <p className="mt-4 text-muted-foreground">Loading your conversation...</p>
-        </div>
+        </PageContainer>
       </AppLayout>
     );
   }
 
   return (
     <AppLayout>
-      <div className="dark flex flex-col h-[calc(100dvh-56px-env(safe-area-inset-bottom,0px))] bg-background overflow-hidden">
+      <PageContainer scrollable={false} className="overflow-hidden">
         {/* Chat History Sidebar - Slide over on mobile */}
         <div
           className={cn(
@@ -435,7 +436,7 @@ export default function Coach() {
             </form>
           </div>
         </div>
-      </div>
+      </PageContainer>
     </AppLayout>
   );
 }

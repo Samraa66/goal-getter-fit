@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
+import { PageContainer } from "@/components/layout/PageContainer";
 import { Button } from "@/components/ui/button";
 import { Camera, Upload, X, Loader2, Utensils, AlertCircle, Target, ArrowLeft, Check, Plus } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -218,7 +219,7 @@ export default function Scanner() {
   if (mode === "select") {
     return (
       <AppLayout>
-        <div className="dark min-h-screen bg-background">
+        <PageContainer>
           <div className="px-6 pt-12 pb-4">
             <h1 className="text-2xl font-bold text-foreground">Scanner</h1>
             <p className="text-muted-foreground">What would you like to do?</p>
@@ -261,7 +262,7 @@ export default function Scanner() {
               </div>
             </button>
           </div>
-        </div>
+        </PageContainer>
       </AppLayout>
     );
   }
@@ -312,7 +313,7 @@ export default function Scanner() {
   if (mode === "menu") {
     return (
       <AppLayout>
-        <div className="dark min-h-screen bg-background">
+        <PageContainer>
           {/* Header with back button */}
           <div className="px-6 pt-12 pb-4">
             <button onClick={goBack} className="flex items-center gap-2 text-muted-foreground mb-4 hover:text-foreground transition-colors">
@@ -463,7 +464,7 @@ export default function Scanner() {
               </div>
             )}
           </div>
-        </div>
+        </PageContainer>
       </AppLayout>
     );
   }
@@ -472,7 +473,7 @@ export default function Scanner() {
   if (mode === "calories") {
     return (
       <AppLayout>
-        <div className="dark min-h-screen bg-background">
+        <PageContainer>
           {/* Header with back button */}
           <div className="px-6 pt-12 pb-4">
             <button onClick={goBack} className="flex items-center gap-2 text-muted-foreground mb-4 hover:text-foreground transition-colors">
@@ -620,7 +621,7 @@ export default function Scanner() {
               </div>
             )}
           </div>
-        </div>
+        </PageContainer>
       </AppLayout>
     );
   }
