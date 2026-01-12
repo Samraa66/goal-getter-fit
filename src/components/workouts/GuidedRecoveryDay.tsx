@@ -9,7 +9,6 @@ import {
   Timer, 
   ArrowRight,
   Sparkles,
-  X,
   Footprints,
   Bike,
   Waves,
@@ -17,12 +16,14 @@ import {
   HeartPulse
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { BreathingSession } from "./BreathingSession";
+import { StretchingSession } from "./StretchingSession";
 
 interface GuidedRecoveryDayProps {
   onActivityLogged?: (activity: { sport: string; duration: number }) => void;
 }
 
-type RecoveryStep = "intro" | "stretching" | "breathing" | "activity" | "complete";
+type RecoveryStep = "intro" | "stretching" | "stretching-session" | "breathing" | "breathing-session" | "activity" | "complete";
 
 const QUICK_ACTIVITIES = [
   { icon: Footprints, label: "Walking", value: "walking" },
@@ -63,10 +64,30 @@ export function GuidedRecoveryDay({ onActivityLogged }: GuidedRecoveryDayProps) 
 
   const advanceToNextStep = (currentStepValue: RecoveryStep) => {
     const stepOrder: RecoveryStep[] = ["stretching", "breathing", "activity", "complete"];
-    const currentIndex = stepOrder.indexOf(currentStepValue);
+    // Map session steps to their parent step for ordering
+    const mappedStep = currentStepValue.replace("-session", "") as RecoveryStep;
+    const currentIndex = stepOrder.indexOf(mappedStep);
     if (currentIndex < stepOrder.length - 1) {
       setCurrentStep(stepOrder[currentIndex + 1]);
     }
+  };
+
+  const handleStartStretchingSession = () => {
+    setCurrentStep("stretching-session");
+  };
+
+  const handleStretchingComplete = () => {
+    setCompletedSteps(prev => new Set([...prev, "stretching"]));
+    setCurrentStep("breathing");
+  };
+
+  const handleStartBreathingSession = () => {
+    setCurrentStep("breathing-session");
+  };
+
+  const handleBreathingComplete = () => {
+    setCompletedSteps(prev => new Set([...prev, "breathing"]));
+    setCurrentStep("activity");
   };
 
   const handleLogActivity = () => {
@@ -201,8 +222,18 @@ export function GuidedRecoveryDay({ onActivityLogged }: GuidedRecoveryDayProps) 
         title="Mobility & Stretching"
         description="5–8 minutes of light stretching to reduce stiffness and improve flexibility."
         primaryAction="Start Stretching"
-        onPrimaryAction={() => handleStepComplete("stretching")}
+        onPrimaryAction={handleStartStretchingSession}
         onSkip={() => handleStepSkip("stretching")}
+      />
+    );
+  }
+
+  // Stretching Session
+  if (currentStep === "stretching-session") {
+    return (
+      <StretchingSession
+        onComplete={handleStretchingComplete}
+        onClose={() => setCurrentStep("stretching")}
       />
     );
   }
@@ -217,8 +248,18 @@ export function GuidedRecoveryDay({ onActivityLogged }: GuidedRecoveryDayProps) 
         title="Breathing & Meditation"
         description="3–5 minutes to calm your nervous system and reduce stress."
         primaryAction="Start Breathing"
-        onPrimaryAction={() => handleStepComplete("breathing")}
+        onPrimaryAction={handleStartBreathingSession}
         onSkip={() => handleStepSkip("breathing")}
+      />
+    );
+  }
+
+  // Breathing Session
+  if (currentStep === "breathing-session") {
+    return (
+      <BreathingSession
+        onComplete={handleBreathingComplete}
+        onClose={() => setCurrentStep("breathing")}
       />
     );
   }
