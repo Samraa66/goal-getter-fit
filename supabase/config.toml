@@ -18,6 +18,9 @@ verify_jwt = true
 [functions.swap-exercise]
 verify_jwt = true
 
+[functions.swap-meal]
+verify_jwt = true
+
 [functions.check-limits]
 verify_jwt = true
 

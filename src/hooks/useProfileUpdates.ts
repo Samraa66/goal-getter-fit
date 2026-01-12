@@ -12,6 +12,7 @@ interface ProfileUpdateResult {
   needsWorkoutRegeneration?: boolean;
   planModification?: {
     type: 'meal' | 'workout' | null;
+    targetMealType?: 'breakfast' | 'lunch' | 'dinner' | 'snack' | null;
     reason?: string;
     context?: string;
   };
@@ -252,7 +253,7 @@ export function useProfileUpdates() {
       weeklyActivities?: ProfileUpdateResult["weeklyActivities"];
       planModification?: ProfileUpdateResult["planModification"];
     }
-  ): Promise<{ success: boolean; error?: string }> => {
+  ): Promise<{ success: boolean; error?: string; coachMessage?: string }> => {
     if (!regenerateMeals && !regenerateWorkouts) {
       return { success: true };
     }
@@ -267,7 +268,7 @@ export function useProfileUpdates() {
       setRegenerationType('workout');
     }
 
-    const promises: Promise<{ success: boolean; type: string; error?: string }>[] = [];
+    const promises: Promise<{ success: boolean; type: string; error?: string; coachMessage?: string }>[] = [];
     const targetDate = options?.date || format(new Date(), "yyyy-MM-dd");
     const planModification = options?.planModification;
     const weeklyActivities = options?.weeklyActivities;
@@ -276,57 +277,99 @@ export function useProfileUpdates() {
       promises.push(
         (async () => {
           try {
-            // Get fresh access token for regeneration
             const mealAccessToken = await getAccessToken();
             if (!mealAccessToken) {
               console.error("No active session for meal regeneration");
               return { success: false, type: 'meal', error: 'No active session' };
             }
             
-            console.log("Triggering meal plan regeneration...");
+            // CRITICAL: Check if we have a specific meal to swap (scoped update)
+            // vs needing to regenerate the entire plan
+            const hasTargetMeal = planModification?.type === 'meal' && planModification?.targetMealType;
             
-            // Call edge function to generate new meal plan
-            const response = await fetch(
-              `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-meal-plan`,
-              {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                  Authorization: `Bearer ${mealAccessToken}`,
-                },
-                body: JSON.stringify({
-                  date: targetDate,
-                  isModification: true,
-                  modification: planModification,
-                }),
+            if (hasTargetMeal) {
+              // SCOPED UPDATE: Use swap-meal for single meal replacement
+              console.log(`Triggering scoped meal swap for ${planModification.targetMealType}...`);
+              
+              const response = await fetch(
+                `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/swap-meal`,
+                {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${mealAccessToken}`,
+                  },
+                  body: JSON.stringify({
+                    date: targetDate,
+                    targetMealType: planModification.targetMealType,
+                    context: planModification.context,
+                    reason: planModification.reason,
+                  }),
+                }
+              );
+
+              if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                console.error("Failed to swap meal:", response.status, errorData);
+                return { success: false, type: 'meal', error: errorData.error || `HTTP ${response.status}` };
               }
-            );
 
-            if (!response.ok) {
-              const errorData = await response.json().catch(() => ({}));
-              console.error("Failed to generate meal plan:", response.status, errorData);
-              return { success: false, type: 'meal', error: errorData.error || `HTTP ${response.status}` };
+              const result = await response.json();
+              
+              if (!result.success) {
+                return { success: false, type: 'meal', error: result.error || 'Failed to swap meal' };
+              }
+
+              console.log("Meal swapped successfully:", result.swappedMeal?.new_name);
+              emitPlanRefresh("meals");
+              return { 
+                success: true, 
+                type: 'meal', 
+                coachMessage: result.message || `I updated your ${planModification.targetMealType}. Let me know if you want to change another meal.`
+              };
+            } else {
+              // FULL REGENERATION: No specific meal target, regenerate entire plan
+              console.log("Triggering full meal plan regeneration...");
+              
+              const response = await fetch(
+                `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-meal-plan`,
+                {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${mealAccessToken}`,
+                  },
+                  body: JSON.stringify({
+                    date: targetDate,
+                    isModification: true,
+                    modification: planModification,
+                  }),
+                }
+              );
+
+              if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                console.error("Failed to generate meal plan:", response.status, errorData);
+                return { success: false, type: 'meal', error: errorData.error || `HTTP ${response.status}` };
+              }
+
+              const generatedPlan = await response.json();
+              
+              if (!generatedPlan.meals || !Array.isArray(generatedPlan.meals)) {
+                console.error("Invalid meal plan response:", generatedPlan);
+                return { success: false, type: 'meal', error: 'Invalid meal plan structure' };
+              }
+
+              const saved = await saveMealPlan(userId, generatedPlan, targetDate);
+              
+              if (!saved) {
+                return { success: false, type: 'meal', error: 'Failed to save meal plan' };
+              }
+
+              console.log("Meal plan saved, emitting refresh event");
+              emitPlanRefresh("meals");
+              return { success: true, type: 'meal' };
             }
-
-            const generatedPlan = await response.json();
-            
-            // Validate the response
-            if (!generatedPlan.meals || !Array.isArray(generatedPlan.meals)) {
-              console.error("Invalid meal plan response:", generatedPlan);
-              return { success: false, type: 'meal', error: 'Invalid meal plan structure' };
-            }
-
-            // CRITICAL: Actually save the generated plan to the database
-            const saved = await saveMealPlan(userId, generatedPlan, targetDate);
-            
-            if (!saved) {
-              return { success: false, type: 'meal', error: 'Failed to save meal plan' };
-            }
-
-            // Emit event to refresh meals on any listening pages
-            console.log("Meal plan saved, emitting refresh event");
-            emitPlanRefresh("meals");
-            return { success: true, type: 'meal' };
           } catch (err) {
             console.error("Meal regeneration error:", err);
             return { success: false, type: 'meal', error: err instanceof Error ? err.message : 'Unknown error' };
@@ -401,15 +444,19 @@ export function useProfileUpdates() {
     const results = await Promise.all(promises);
     const allSuccessful = results.every(r => r.success);
     const failedTypes = results.filter(r => !r.success).map(r => `${r.type}: ${r.error || 'Unknown error'}`);
+    const coachMessage = results.find(r => r.coachMessage)?.coachMessage;
 
     setIsRegenerating(false);
     setRegenerationType(null);
 
     if (allSuccessful) {
-      toast.success("Your plan has been updated!", {
-        description: "Check the Meals or Workouts tab to see your new plan.",
-      });
-      return { success: true };
+      // Don't show toast if we have a coach message (it will be shown in chat)
+      if (!coachMessage) {
+        toast.success("Your plan has been updated!", {
+          description: "Check the Meals or Workouts tab to see your new plan.",
+        });
+      }
+      return { success: true, coachMessage };
     } else {
       const errorMessage = failedTypes.join(', ');
       console.error("Regeneration failures:", errorMessage);

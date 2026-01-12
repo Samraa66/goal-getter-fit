@@ -93,39 +93,33 @@ Analyze the user's message and extract:
   Example: "I have a football match Saturday" → affects this week's leg volume
 
 ====== PLAN MODIFICATION REQUESTS (immediate change) ======
-Detect when user wants to CHANGE their current meal or workout plan:
+Detect when user wants to CHANGE their current meal or workout plan.
 
-MEAL MODIFICATION triggers (ANY of these should trigger needsMealRegeneration):
-- "I don't want this dinner" / "change my dinner"
-- "Can I eat something else for lunch?"
-- "I don't like today's breakfast"
-- "Give me a different meal"
-- "This meal doesn't work for me"
-- "Swap this meal out"
-- FOOD REQUESTS: "I want [food]", "Give me [food]", "Add [food]"
-  Examples: "I want salmon", "Give me pasta", "I want chicken today", "Can I have steak?"
-- "Make my lunch with [ingredient]"
-- "I'm craving [food]"
-- "How about [food] for dinner?"
+MEAL MODIFICATION - CRITICAL: Extract the SPECIFIC meal type being targeted:
+- "change my breakfast" / "I don't want this breakfast" → targetMealType: "breakfast"
+- "swap my lunch" / "different lunch please" → targetMealType: "lunch"
+- "change my dinner" / "I don't like today's dinner" → targetMealType: "dinner"
+- "change my snack" / "different snack" → targetMealType: "snack"
+- "I want salmon for dinner" → targetMealType: "dinner", context: "salmon"
+- "give me pasta for lunch" → targetMealType: "lunch", context: "pasta"
+- "make my breakfast with eggs" → targetMealType: "breakfast", context: "eggs"
+
+If no specific meal is mentioned but user wants to change "a meal" or "this meal", ask them to specify which one.
 
 WORKOUT MODIFICATION triggers:
 - "This workout is too hard" / "too intense"
 - "Make it easier" / "Make this shorter"
 - "I can't do this exercise"
 - "Change today's workout"
-- "I need an easier workout"
-- "This is too much"
-- "Remove squats" / "No deadlifts" / "Skip [exercise]"
 
 ====== DETECTION RULES ======
 1. "I prefer Push/Pull/Legs" → preferred_split: "push_pull_legs"
 2. "I train one muscle per day" → preferred_split: "bro_split"
 3. "I play football every weekend" → other_sports: ["football"] (permanent)
 4. "I have a football match this week" → weekly_activities (temporary)
-5. "This plan is too intense" / "too hard" → planModification with type "workout"
-6. "I don't want this meal" → planModification with type "meal"
-7. "I want [food]" or "Give me [food]" → planModification with type "meal" and context should contain the requested food
-8. "Remove squats" → planModification with type "workout"
+5. "This plan is too intense" → planModification with type "workout"
+6. "I don't want this breakfast" → planModification with type "meal", targetMealType: "breakfast"
+7. "Change my dinner to salmon" → planModification with type "meal", targetMealType: "dinner", context: "salmon"
 
 ====== OUTPUT FORMAT ======
 Return ONLY valid JSON:
@@ -135,8 +129,9 @@ Return ONLY valid JSON:
   "weeklyActivities": { "activities": [...], "notes": "..." },
   "planModification": {
     "type": "meal" | "workout" | null,
+    "targetMealType": "breakfast" | "lunch" | "dinner" | "snack" | null,
     "reason": "user's reason for change",
-    "context": "specific details (e.g., requested food like salmon, or exercise like squats)"
+    "context": "specific details (e.g., requested food like salmon)"
   },
   "needsWorkoutRegeneration": true/false,
   "needsMealRegeneration": true/false
@@ -145,6 +140,7 @@ Return ONLY valid JSON:
 If nothing relevant found: {"hasUpdates": false}
 
 CRITICAL:
+- For meal modifications, you MUST extract targetMealType if the user specifies which meal.
 - Plan modification requests MUST set hasUpdates=true
 - Plan modification requests MUST set needsMealRegeneration/needsWorkoutRegeneration accordingly
 - Output ONLY valid JSON, no markdown, no code blocks.`;
@@ -297,6 +293,7 @@ CRITICAL:
 
 interface PlanModification {
   type?: 'meal' | 'workout' | null;
+  targetMealType?: 'breakfast' | 'lunch' | 'dinner' | 'snack' | null;
   reason?: string;
   context?: string;
 }
