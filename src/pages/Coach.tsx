@@ -289,8 +289,8 @@ export default function Coach() {
   // Show loading state while fetching
   if (isLoadingSessions && isLoadingMessages) {
     return (
-      <AppLayout hideNav>
-        <div className="dark fixed inset-0 flex flex-col bg-background items-center justify-center">
+      <AppLayout>
+        <div className="dark flex flex-col h-[calc(100dvh-56px-env(safe-area-inset-bottom,0px))] bg-background items-center justify-center">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
           <p className="mt-4 text-muted-foreground">Loading your conversation...</p>
         </div>
@@ -299,8 +299,8 @@ export default function Coach() {
   }
 
   return (
-    <AppLayout hideNav>
-      <div className="dark fixed inset-0 flex bg-background">
+    <AppLayout>
+      <div className="dark flex flex-col h-[calc(100dvh-56px-env(safe-area-inset-bottom,0px))] bg-background overflow-hidden">
         {/* Chat History Sidebar - Slide over on mobile */}
         <div
           className={cn(
@@ -335,7 +335,7 @@ export default function Coach() {
         </div>
 
         {/* Main Chat Area */}
-        <div className="flex flex-col flex-1 min-w-0 h-full">
+        <div className="flex flex-col flex-1 min-w-0 min-h-0">
           {/* Header */}
           <div className="flex-shrink-0 px-4 sm:px-6 pt-12 pb-4 border-b border-border">
             <div className="flex items-center gap-3">
@@ -410,8 +410,8 @@ export default function Coach() {
             </div>
           )}
 
-          {/* Input - Fixed to bottom with safe area */}
-          <div className="flex-shrink-0 p-4 border-t border-border bg-background pb-[env(safe-area-inset-bottom,16px)]">
+          {/* Input - Above bottom nav */}
+          <div className="flex-shrink-0 p-4 border-t border-border bg-background">
             <form onSubmit={handleSubmit} className="flex gap-2">
               <Input
                 value={input}

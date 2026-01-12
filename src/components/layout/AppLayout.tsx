@@ -6,10 +6,16 @@ interface AppLayoutProps {
   hideNav?: boolean;
 }
 
+// Bottom nav height: 56px (py-2 + icon + text) + safe area
+const NAV_HEIGHT = "calc(56px + env(safe-area-inset-bottom, 0px))";
+
 export function AppLayout({ children, hideNav = false }: AppLayoutProps) {
   return (
     <div className="min-h-screen bg-background">
-      <main className={hideNav ? "" : "pb-20"}>
+      <main 
+        className={hideNav ? "" : ""} 
+        style={hideNav ? undefined : { paddingBottom: NAV_HEIGHT }}
+      >
         {children}
       </main>
       {!hideNav && <BottomNav />}
