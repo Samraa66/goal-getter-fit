@@ -3,6 +3,8 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { WorkoutCard } from "@/components/workouts/WorkoutCard";
 import { ActiveWorkout } from "@/components/workouts/ActiveWorkout";
 import { WorkoutComplete } from "@/components/workouts/WorkoutComplete";
+import { WorkoutProgress } from "@/components/workouts/WorkoutProgress";
+import { WorkoutSchedule } from "@/components/workouts/WorkoutSchedule";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Calendar, TrendingUp, Loader2, Sparkles, Edit3, Lock, Flame, Dumbbell, Clock, Leaf } from "lucide-react";
@@ -36,6 +38,8 @@ export default function Workouts() {
     calories: number;
     exercises: number;
   } | null>(null);
+  const [showProgress, setShowProgress] = useState(false);
+  const [showSchedule, setShowSchedule] = useState(false);
 
   const { 
     program, 
@@ -201,6 +205,25 @@ export default function Workouts() {
     );
   }
 
+  if (showProgress) {
+    return (
+      <WorkoutProgress
+        completedWorkouts={completedWorkouts}
+        currentStreak={currentStreak}
+        onClose={() => setShowProgress(false)}
+      />
+    );
+  }
+
+  if (showSchedule && displayProgram?.workouts) {
+    return (
+      <WorkoutSchedule
+        workouts={displayProgram.workouts}
+        onClose={() => setShowSchedule(false)}
+      />
+    );
+  }
+
   const EmptyState = () => (
     <div className="flex flex-col items-center justify-center py-12 text-center">
       <Sparkles className="h-12 w-12 text-muted-foreground mb-4" />
@@ -317,11 +340,16 @@ export default function Workouts() {
 
         {/* Action Buttons */}
         <div className="flex gap-3 px-6 mb-6">
-          <Button variant="outline" className="flex-1">
+          <Button variant="outline" className="flex-1" onClick={() => setShowProgress(true)}>
             <TrendingUp className="mr-2 h-4 w-4" />
             Progress
           </Button>
-          <Button variant="outline" className="flex-1">
+          <Button 
+            variant="outline" 
+            className="flex-1" 
+            onClick={() => setShowSchedule(true)}
+            disabled={!displayProgram?.workouts?.length}
+          >
             <Calendar className="mr-2 h-4 w-4" />
             Schedule
           </Button>
