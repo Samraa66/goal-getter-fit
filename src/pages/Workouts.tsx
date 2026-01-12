@@ -8,7 +8,7 @@ import { WorkoutSchedule } from "@/components/workouts/WorkoutSchedule";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Calendar, TrendingUp, Loader2, Sparkles, Edit3, Lock, Flame, Dumbbell, Clock, Leaf } from "lucide-react";
-import { RestDayCard } from "@/components/workouts/RestDayCard";
+import { GuidedRecoveryDay } from "@/components/workouts/GuidedRecoveryDay";
 import { useWorkoutProgram } from "@/hooks/useWorkoutProgram";
 import { useWorkoutHistory } from "@/hooks/useWorkoutHistory";
 import { useStreak } from "@/hooks/useStreak";
@@ -394,7 +394,7 @@ export default function Workouts() {
                 </Button>
               </>
             ) : program ? (
-              <RestDayCard />
+              <GuidedRecoveryDay />
             
             ) : (
               <EmptyState />
