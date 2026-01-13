@@ -6,12 +6,38 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Security constants
+const MAX_PAYLOAD_SIZE = 10 * 1024 * 1024; // 10MB for images
+
+// Log AI call for monitoring
+async function logAICall(serviceClient: any, userId: string, status: string, errorMessage?: string) {
+  try {
+    await serviceClient.from('ai_call_logs').insert({
+      user_id: userId,
+      function_name: 'analyze-menu',
+      status,
+      error_message: errorMessage || null,
+    });
+  } catch (e) {
+    console.error('Failed to log AI call:', e);
+  }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
+    // SECURITY: Check payload size
+    const contentLength = req.headers.get('content-length');
+    if (contentLength && parseInt(contentLength) > MAX_PAYLOAD_SIZE) {
+      return new Response(JSON.stringify({ error: 'Image too large. Maximum size is 10MB.' }), {
+        status: 413,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     // SECURITY: Authenticate user from JWT
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
@@ -23,6 +49,7 @@ serve(async (req) => {
 
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
 
     if (!LOVABLE_API_KEY) {
@@ -34,6 +61,9 @@ serve(async (req) => {
       global: { headers: { Authorization: authHeader } },
     });
 
+    // Create service client for logging and rate limiting
+    const serviceClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
     // SECURITY: Get authenticated user from JWT
     const { data: { user }, error: userError } = await supabase.auth.getUser();
     if (userError || !user) {
@@ -44,15 +74,49 @@ serve(async (req) => {
       });
     }
 
+    // RATE LIMITING: Check per-user AI generation limits
+    const { data: rateLimitResult, error: rateLimitError } = await serviceClient.rpc('check_ai_rate_limit', {
+      p_user_id: user.id
+    });
+
+    if (rateLimitError) {
+      console.error("Rate limit check error:", rateLimitError);
+    } else if (rateLimitResult && !rateLimitResult.allowed) {
+      console.log("Rate limit exceeded for user:", user.id, rateLimitResult);
+      await logAICall(serviceClient, user.id, 'rate_limited', rateLimitResult.message);
+      return new Response(JSON.stringify({ 
+        error: rateLimitResult.message || "You've reached today's AI limit. Try again tomorrow.",
+        rateLimited: true
+      }), {
+        status: 429,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     console.log("Menu Scanner: Authenticated user", user.id);
 
     const { image, mealType, profile } = await req.json();
 
-    if (!image) {
-      throw new Error("No image provided");
+    // SECURITY: Validate inputs
+    if (!image || typeof image !== 'string') {
+      return new Response(JSON.stringify({ error: "No valid image provided" }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
-    console.log("Menu Scanner: Analyzing menu image for", mealType);
+    // Validate image is base64 or valid URL
+    if (!image.startsWith('data:image/') && !image.startsWith('http')) {
+      return new Response(JSON.stringify({ error: "Invalid image format" }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const validMealTypes = ['breakfast', 'lunch', 'dinner', 'snack'];
+    const sanitizedMealType = validMealTypes.includes(mealType) ? mealType : 'lunch';
+
+    console.log("Menu Scanner: Analyzing menu image for", sanitizedMealType);
 
     // Calculate user targets
     const calorieTarget = profile?.daily_calorie_target || 2000;
@@ -71,7 +135,8 @@ serve(async (req) => {
       snack: { calories: Math.round(calorieTarget * 0.15), protein: Math.round(proteinTarget * 0.15) },
     };
     
-    const mealAllocation = mealAllocations[mealType] || mealAllocations.lunch;
+    // Use sanitized meal type for allocations
+    const mealAllocation = mealAllocations[sanitizedMealType] || mealAllocations.lunch;
     const dietaryPreference = profile?.dietary_preference || "none";
     const allergies = profile?.allergies?.join(", ") || "none";
 
@@ -92,19 +157,19 @@ USER PROFILE:
 - Allergies/Restrictions: ${allergies}
 
 MEAL CONTEXT:
-- This is for their ${mealType.toUpperCase()}
+- This is for their ${sanitizedMealType.toUpperCase()}
 - Ideal calories for this meal: ~${mealAllocation.calories} kcal
 - Ideal protein for this meal: ~${mealAllocation.protein}g
 
 YOUR TASK:
 1. Analyze the restaurant menu in the image
-2. Identify options that best fit the user's ${mealType} targets
+2. Identify options that best fit the user's ${sanitizedMealType} targets
 3. Explain HOW each option helps them reach their ${goal} goal
 4. Suggest modifications to make dishes fit their plan better
 
 CRITICAL: Your recommendations must be PERSONALIZED. Don't give generic "healthy eating" advice. 
 - Reference their specific calorie/protein targets
-- Explain how each dish fits or exceeds their ${mealType} allocation
+- Explain how each dish fits or exceeds their ${sanitizedMealType} allocation
 - For ${goal} goal, prioritize ${goal === 'fat_loss' ? 'lower calorie, high protein options' : goal === 'muscle_gain' ? 'high protein, adequate calorie options' : 'balanced options'}
 
 Respond with a JSON object in this exact format:
@@ -149,7 +214,7 @@ Include 2-4 healthy choices. Be specific with calorie/protein estimates.`;
             content: [
               {
                 type: "text",
-                text: `Analyze this restaurant menu and find the best ${mealType} options for me. Remember my goal is ${goal} and I need about ${mealAllocation.calories} calories and ${mealAllocation.protein}g protein for this meal. Return your response as valid JSON.`,
+                text: `Analyze this restaurant menu and find the best ${sanitizedMealType} options for me. Remember my goal is ${goal} and I need about ${mealAllocation.calories} calories and ${mealAllocation.protein}g protein for this meal. Return your response as valid JSON.`,
               },
               {
                 type: "image_url",
@@ -166,12 +231,14 @@ Include 2-4 healthy choices. Be specific with calorie/protein estimates.`;
       console.error("AI Gateway error:", response.status, errorText);
       
       if (response.status === 429) {
+        await logAICall(serviceClient, user.id, 'rate_limited', 'AI gateway rate limit');
         return new Response(JSON.stringify({ error: "Rate limit exceeded" }), {
           status: 429,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
       if (response.status === 402) {
+        await logAICall(serviceClient, user.id, 'error', 'Payment required');
         return new Response(JSON.stringify({ error: "Payment required" }), {
           status: 402,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -210,6 +277,9 @@ Include 2-4 healthy choices. Be specific with calorie/protein estimates.`;
     }
 
     console.log("Menu Scanner: Analysis complete");
+    
+    // Log successful call
+    await logAICall(serviceClient, user.id, 'success');
 
     return new Response(JSON.stringify(analysis), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },

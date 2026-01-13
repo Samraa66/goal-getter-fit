@@ -6,12 +6,38 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Security constants
+const MAX_PAYLOAD_SIZE = 10 * 1024 * 1024; // 10MB for images
+
+// Log AI call for monitoring
+async function logAICall(serviceClient: any, userId: string, status: string, errorMessage?: string) {
+  try {
+    await serviceClient.from('ai_call_logs').insert({
+      user_id: userId,
+      function_name: 'count-calories',
+      status,
+      error_message: errorMessage || null,
+    });
+  } catch (e) {
+    console.error('Failed to log AI call:', e);
+  }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
+    // SECURITY: Check payload size
+    const contentLength = req.headers.get('content-length');
+    if (contentLength && parseInt(contentLength) > MAX_PAYLOAD_SIZE) {
+      return new Response(JSON.stringify({ error: 'Image too large. Maximum size is 10MB.' }), {
+        status: 413,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     // SECURITY: Authenticate user from JWT
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
@@ -23,6 +49,7 @@ serve(async (req) => {
 
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
 
     if (!LOVABLE_API_KEY) {
@@ -34,6 +61,9 @@ serve(async (req) => {
       global: { headers: { Authorization: authHeader } },
     });
 
+    // Create service client for logging and rate limiting
+    const serviceClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
     // SECURITY: Get authenticated user from JWT
     const { data: { user }, error: userError } = await supabase.auth.getUser();
     if (userError || !user) {
@@ -44,12 +74,43 @@ serve(async (req) => {
       });
     }
 
+    // RATE LIMITING: Check per-user AI generation limits
+    const { data: rateLimitResult, error: rateLimitError } = await serviceClient.rpc('check_ai_rate_limit', {
+      p_user_id: user.id
+    });
+
+    if (rateLimitError) {
+      console.error("Rate limit check error:", rateLimitError);
+    } else if (rateLimitResult && !rateLimitResult.allowed) {
+      console.log("Rate limit exceeded for user:", user.id, rateLimitResult);
+      await logAICall(serviceClient, user.id, 'rate_limited', rateLimitResult.message);
+      return new Response(JSON.stringify({ 
+        error: rateLimitResult.message || "You've reached today's AI limit. Try again tomorrow.",
+        rateLimited: true
+      }), {
+        status: 429,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     console.log("Calorie Counter: Authenticated user", user.id);
 
     const { image } = await req.json();
 
-    if (!image) {
-      throw new Error("No image provided");
+    // SECURITY: Validate image input
+    if (!image || typeof image !== 'string') {
+      return new Response(JSON.stringify({ error: "No valid image provided" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Validate image is base64 or valid URL
+    if (!image.startsWith('data:image/') && !image.startsWith('http')) {
+      return new Response(JSON.stringify({ error: "Invalid image format" }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
     console.log("Calorie Counter: Analyzing food image");
@@ -128,12 +189,14 @@ Be conservative and honest in your estimates. It's better to give a wider range 
       console.error("AI Gateway error:", response.status, errorText);
 
       if (response.status === 429) {
+        await logAICall(serviceClient, user.id, 'rate_limited', 'AI gateway rate limit');
         return new Response(JSON.stringify({ error: "Rate limit exceeded. Please try again in a moment." }), {
           status: 429,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
       if (response.status === 402) {
+        await logAICall(serviceClient, user.id, 'error', 'Payment required');
         return new Response(JSON.stringify({ error: "Service temporarily unavailable." }), {
           status: 402,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -183,6 +246,9 @@ Be conservative and honest in your estimates. It's better to give a wider range 
     }
 
     console.log("Calorie Counter: Analysis complete");
+    
+    // Log successful call
+    await logAICall(serviceClient, user.id, 'success');
 
     return new Response(JSON.stringify(analysis), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
