@@ -58,6 +58,42 @@ export type Database = {
           },
         ]
       }
+      ai_call_logs: {
+        Row: {
+          created_at: string
+          error_message: string | null
+          estimated_cost: number | null
+          function_name: string
+          id: string
+          status: string
+          tokens_input: number | null
+          tokens_output: number | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          error_message?: string | null
+          estimated_cost?: number | null
+          function_name: string
+          id?: string
+          status?: string
+          tokens_input?: number | null
+          tokens_output?: number | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          error_message?: string | null
+          estimated_cost?: number | null
+          function_name?: string
+          id?: string
+          status?: string
+          tokens_input?: number | null
+          tokens_output?: number | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       ai_usage: {
         Row: {
           created_at: string

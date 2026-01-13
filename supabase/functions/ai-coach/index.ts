@@ -6,12 +6,40 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Security constants
+const MAX_MESSAGE_LENGTH = 2000;
+const MAX_MESSAGES_IN_CONTEXT = 20;
+const MAX_PAYLOAD_SIZE = 100 * 1024; // 100KB max for chat
+
+// Log AI call for monitoring
+async function logAICall(serviceClient: any, userId: string, status: string, errorMessage?: string) {
+  try {
+    await serviceClient.from('ai_call_logs').insert({
+      user_id: userId,
+      function_name: 'ai-coach',
+      status,
+      error_message: errorMessage || null,
+    });
+  } catch (e) {
+    console.error('Failed to log AI call:', e);
+  }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
+    // SECURITY: Check payload size
+    const contentLength = req.headers.get('content-length');
+    if (contentLength && parseInt(contentLength) > MAX_PAYLOAD_SIZE) {
+      return new Response(JSON.stringify({ error: 'Payload too large' }), {
+        status: 413,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     // SECURITY: Authenticate user from JWT
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
@@ -35,6 +63,9 @@ serve(async (req) => {
       global: { headers: { Authorization: authHeader } },
     });
 
+    // Create service client for logging (bypasses RLS)
+    const serviceClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
     // SECURITY: Get authenticated user from JWT - never trust client-supplied userId
     const { data: { user }, error: userError } = await supabase.auth.getUser();
     if (userError || !user) {
@@ -48,8 +79,7 @@ serve(async (req) => {
     const userId = user.id; // SECURITY: Always use authenticated user's ID
 
     // RATE LIMITING: Check per-user AI generation limits
-    const adminClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-    const { data: rateLimitResult, error: rateLimitError } = await adminClient.rpc('check_ai_rate_limit', {
+    const { data: rateLimitResult, error: rateLimitError } = await serviceClient.rpc('check_ai_rate_limit', {
       p_user_id: userId
     });
 
@@ -57,6 +87,7 @@ serve(async (req) => {
       console.error("Rate limit check error:", rateLimitError);
     } else if (rateLimitResult && !rateLimitResult.allowed) {
       console.log("Rate limit exceeded for user:", userId, rateLimitResult);
+      await logAICall(serviceClient, userId, 'rate_limited', rateLimitResult.message);
       return new Response(JSON.stringify({ 
         error: rateLimitResult.message || "You've reached today's AI limit. Try again tomorrow.",
         rateLimited: true,
@@ -67,7 +98,34 @@ serve(async (req) => {
       });
     }
 
-    const { messages, profile } = await req.json();
+    const body = await req.json();
+    let { messages, profile } = body;
+
+    // SECURITY: Validate and sanitize messages
+    if (!Array.isArray(messages)) {
+      return new Response(JSON.stringify({ error: 'Invalid messages format' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Limit number of messages to prevent context injection attacks
+    messages = messages.slice(-MAX_MESSAGES_IN_CONTEXT);
+
+    // Sanitize each message content
+    messages = messages.map((msg: any) => ({
+      role: msg.role === 'user' || msg.role === 'assistant' ? msg.role : 'user',
+      content: typeof msg.content === 'string' 
+        ? msg.content.slice(0, MAX_MESSAGE_LENGTH) 
+        : '',
+    })).filter((msg: any) => msg.content.length > 0);
+
+    if (messages.length === 0) {
+      return new Response(JSON.stringify({ error: 'No valid messages provided' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     console.log("AI Coach: Processing request for authenticated user", userId, "with", messages.length, "messages");
 
@@ -225,6 +283,9 @@ Always prioritize user safety. For medical concerns, recommend consulting health
     }
 
     console.log("AI Coach: Streaming response");
+    
+    // Log successful call
+    await logAICall(serviceClient, userId, 'success');
 
     return new Response(response.body, {
       headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
