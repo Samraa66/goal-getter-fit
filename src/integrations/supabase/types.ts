@@ -281,8 +281,10 @@ export type Database = {
         Row: {
           created_at: string | null
           duration_seconds: number | null
+          how_to: string | null
           id: string
           is_completed: boolean | null
+          muscle_groups: string | null
           name: string
           notes: string | null
           order_index: number | null
@@ -296,8 +298,10 @@ export type Database = {
         Insert: {
           created_at?: string | null
           duration_seconds?: number | null
+          how_to?: string | null
           id?: string
           is_completed?: boolean | null
+          muscle_groups?: string | null
           name: string
           notes?: string | null
           order_index?: number | null
@@ -311,8 +315,10 @@ export type Database = {
         Update: {
           created_at?: string | null
           duration_seconds?: number | null
+          how_to?: string | null
           id?: string
           is_completed?: boolean | null
+          muscle_groups?: string | null
           name?: string
           notes?: string | null
           order_index?: number | null

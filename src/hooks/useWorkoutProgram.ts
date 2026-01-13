@@ -6,6 +6,8 @@ import { toast } from "sonner";
 interface Exercise {
   id: string;
   name: string;
+  muscle_groups?: string;
+  how_to?: string;
   sets: number;
   reps: string;
   weight?: string;
@@ -169,6 +171,8 @@ export function useWorkoutProgram() {
         const exercisesToInsert = (workout.exercises || []).map((ex: any, index: number) => ({
           workout_id: newWorkout.id,
           name: ex.name,
+          muscle_groups: ex.muscle_groups || null,
+          how_to: ex.how_to || null,
           sets: ex.sets,
           reps: ex.reps,
           rest_seconds: ex.rest_seconds || 60,
