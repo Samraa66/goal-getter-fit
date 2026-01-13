@@ -1,12 +1,14 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { X, Play, Pause, SkipForward, CheckCircle, RefreshCw, Loader2 } from "lucide-react";
+import { X, Play, Pause, SkipForward, CheckCircle, RefreshCw, Loader2, Target, Info } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface Exercise {
   id: string;
   name: string;
+  muscle_groups?: string;
+  how_to?: string;
   sets: number;
   reps: string;
   weight?: string;
@@ -154,19 +156,48 @@ export function ActiveWorkout({
         ) : (
           <div className="text-center w-full max-w-md">
             <div className="mb-8">
-              <h2 className="text-3xl font-bold text-foreground mb-2">
+              {/* Exercise Name */}
+              <h2 className="text-3xl font-bold text-foreground mb-3">
                 {currentExercise.name}
               </h2>
-              <div className="flex items-center justify-center gap-4 text-lg text-muted-foreground">
+
+              {/* Muscle Groups */}
+              {currentExercise.muscle_groups && (
+                <div className="flex items-center justify-center gap-2 mb-3">
+                  <Target className="h-4 w-4 text-primary" />
+                  <span className="text-sm text-muted-foreground">
+                    {currentExercise.muscle_groups}
+                  </span>
+                </div>
+              )}
+
+              {/* Sets x Reps */}
+              <div className="flex items-center justify-center gap-4 text-lg text-muted-foreground mb-4">
                 <span>{currentExercise.sets} sets</span>
                 <span>×</span>
-                <span>{currentExercise.reps} reps</span>
+                <span>{currentExercise.reps}</span>
               </div>
+
               {currentExercise.weight && (
-                <p className="text-primary mt-2">{currentExercise.weight}</p>
+                <p className="text-primary font-medium mb-4">{currentExercise.weight}</p>
               )}
-              {currentExercise.notes && (
-                <p className="text-sm text-muted-foreground mt-4 bg-secondary/50 rounded-lg p-3">
+
+              {/* How To - Coaching Cues */}
+              {currentExercise.how_to && (
+                <div className="bg-gradient-to-r from-amber-500/10 to-orange-500/10 border border-amber-500/20 rounded-xl p-4 mb-3">
+                  <div className="flex items-start gap-3">
+                    <Info className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+                    <div className="text-left">
+                      <p className="text-xs font-medium text-amber-500 uppercase tracking-wide mb-1">How to perform</p>
+                      <p className="text-sm text-foreground">{currentExercise.how_to}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Additional Notes (if no how_to) */}
+              {currentExercise.notes && !currentExercise.how_to && (
+                <p className="text-sm text-muted-foreground bg-secondary/50 rounded-lg p-3">
                   💡 {currentExercise.notes}
                 </p>
               )}

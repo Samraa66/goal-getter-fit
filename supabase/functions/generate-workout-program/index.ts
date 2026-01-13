@@ -259,15 +259,27 @@ ${sportsImpact.hasCardioSports ? 'SKIP SEPARATE CARDIO - user gets it from sport
       "exercises": [
         {
           "name": "Bench Press",
+          "muscle_groups": "Chest, Shoulders, Triceps",
+          "how_to": "Keep chest up, control the descent, drive through heels of hands",
           "sets": 4,
           "reps": "8-10",
           "rest_seconds": 90,
-          "notes": "Control the descent"
+          "notes": "Optional coaching tip"
         }
       ]
     }
   ]
 }
+
+====== EXERCISE INSTRUCTION RULES ======
+1. EVERY exercise MUST include "muscle_groups" and "how_to" fields
+2. muscle_groups: List 1-3 primary muscles targeted (e.g., "Quads, Glutes, Core")
+3. how_to: 1-2 short coaching cues focused on form and safety (max 15 words)
+   - Use beginner-friendly language, no jargon
+   - Focus on key movement patterns
+   - Examples: "Keep back flat, squeeze at top", "Drive through heels, chest up"
+4. For bodyweight exercises, use reps or time (e.g., "30 seconds")
+5. For cardio exercises, use duration (e.g., "10 minutes")
 
 workout_type MUST be one of: "push", "pull", "legs", "chest", "back", "shoulders", "arms", "upper", "lower", "full_body", "cardio"
 DO NOT include "rest" type workouts - only actual training days with exercises.
