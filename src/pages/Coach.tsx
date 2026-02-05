@@ -5,13 +5,17 @@ import { ChatMessage } from "@/components/chat/ChatMessage";
 import { ChatHistorySidebar } from "@/components/coach/ChatHistorySidebar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Send, Sparkles, Loader2, RefreshCw, History, Menu } from "lucide-react";
+import { Send, Sparkles, Loader2, RefreshCw, History } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { useProfileUpdates } from "@/hooks/useProfileUpdates";
 import { useChatSessions } from "@/hooks/useChatSessions";
+import { useSubscription, SUBSCRIPTION_LIMITS } from "@/hooks/useSubscription";
 import { cn } from "@/lib/utils";
+import { UpgradeModal } from "@/components/subscription/UpgradeModal";
+import { LimitNotice } from "@/components/subscription/LimitNotice";
+import { BetaBanner } from "@/components/beta/BetaBanner";
 
 interface UserProfile {
   fitness_goal: string | null;
@@ -62,10 +66,19 @@ export default function Coach() {
     updateLastAssistantMessage,
     completeAssistantResponse,
   } = useChatSessions();
+  const {
+    isPro,
+    messagesUsed,
+    messagesLimit,
+    canSendMessage,
+    incrementMessageCount,
+    checkMessageLimit,
+  } = useSubscription();
   
   const [input, setInput] = useState("");
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
@@ -95,8 +108,20 @@ export default function Coach() {
   const sendMessage = async (messageText: string) => {
     if (!messageText.trim() || isLoading || isRegenerating || !user) return;
 
+    // Check message limit for free users BEFORE sending
+    if (!isPro) {
+      const canSend = await checkMessageLimit();
+      if (!canSend) {
+        setShowUpgradeModal(true);
+        return;
+      }
+    }
+
     setInput("");
     setIsLoading(true);
+    
+    // Increment message count optimistically
+    incrementMessageCount();
     
     // Add user message (saves to DB)
     await addUserMessage(messageText);
@@ -301,6 +326,9 @@ export default function Coach() {
 
   return (
     <AppLayout>
+      {/* Beta Banner */}
+      <BetaBanner />
+      
       <PageContainer scrollable={false} className="overflow-hidden">
         {/* Chat History Sidebar - Slide over on mobile */}
         <div
@@ -411,21 +439,36 @@ export default function Coach() {
             </div>
           )}
 
+          {/* Limit Notice for Free Users */}
+          {!isPro && (
+            <LimitNotice 
+              messagesUsed={messagesUsed}
+              messagesLimit={messagesLimit}
+              onUpgradeClick={() => setShowUpgradeModal(true)}
+            />
+          )}
+
           {/* Input - Above bottom nav */}
           <div className="flex-shrink-0 p-4 border-t border-border bg-background">
             <form onSubmit={handleSubmit} className="flex gap-2">
               <Input
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder={isRegenerating ? "Coach is updating your plan..." : "Tell me what you want to change…"}
+                placeholder={
+                  !canSendMessage && !isPro
+                    ? "Daily limit reached — upgrade for unlimited"
+                    : isRegenerating 
+                      ? "Coach is updating your plan..." 
+                      : "Tell me what you want to change…"
+                }
                 className="flex-1 bg-card border-border text-foreground placeholder:text-muted-foreground"
-                disabled={inputDisabled}
+                disabled={inputDisabled || (!canSendMessage && !isPro)}
               />
               <Button
                 type="submit"
                 size="icon"
                 className="gradient-primary shadow-lg shadow-primary/25 shrink-0"
-                disabled={!input.trim() || inputDisabled}
+                disabled={!input.trim() || inputDisabled || (!canSendMessage && !isPro)}
               >
                 {isRegenerating ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -436,6 +479,15 @@ export default function Coach() {
             </form>
           </div>
         </div>
+
+        {/* Upgrade Modal */}
+        <UpgradeModal 
+          open={showUpgradeModal}
+          onOpenChange={setShowUpgradeModal}
+          reason="message_limit"
+          messagesUsed={messagesUsed}
+          messagesLimit={messagesLimit}
+        />
       </PageContainer>
     </AppLayout>
   );

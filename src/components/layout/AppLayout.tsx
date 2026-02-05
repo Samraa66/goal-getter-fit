@@ -1,5 +1,6 @@
 import { ReactNode } from "react";
 import { BottomNav } from "./BottomNav";
+import { FeedbackButton } from "@/components/beta/FeedbackButton";
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -19,6 +20,7 @@ export function AppLayout({ children, hideNav = false }: AppLayoutProps) {
         {children}
       </main>
       {!hideNav && <BottomNav />}
+      <FeedbackButton />
     </div>
   );
 }
