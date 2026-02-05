@@ -12,13 +12,19 @@ import {
   Scale,
   Ruler,
   Flame,
-  Loader2
+  Loader2,
+  Crown,
+  CreditCard,
+  FlaskConical
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
+import { useSubscription } from "@/hooks/useSubscription";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { ProBadge } from "@/components/subscription/ProBadge";
+import { UpgradeModal } from "@/components/subscription/UpgradeModal";
 
 const menuItems = [
   { icon: Target, label: "Goals & Preferences", path: "/settings/goals" },
@@ -39,10 +45,13 @@ interface ProfileData {
 export default function Profile() {
   const navigate = useNavigate();
   const { user: authUser, signOut } = useAuth();
+  const { isPro, subscriptionEnd, openCustomerPortal, openCheckout, isLoading: isSubLoading } = useSubscription();
   const { toast } = useToast();
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [isOpeningPortal, setIsOpeningPortal] = useState(false);
 
   useEffect(() => {
     async function fetchProfile() {
@@ -153,6 +162,66 @@ export default function Profile() {
           </div>
         </div>
 
+        {/* Subscription Card */}
+        <div className="mx-6 mb-6">
+          <div className={`rounded-xl border p-4 ${isPro ? 'bg-primary/5 border-primary/20' : 'bg-card border-border'}`}>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Crown className={`h-5 w-5 ${isPro ? 'text-primary' : 'text-muted-foreground'}`} />
+                <span className="font-medium text-foreground">
+                  {isPro ? 'Pro Plan' : 'Free Plan'}
+                </span>
+                {isPro && <ProBadge size="sm" />}
+              </div>
+            </div>
+            
+            {isPro ? (
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  Unlimited messages, full memory
+                  {subscriptionEnd && (
+                    <span className="block text-xs mt-1">
+                      Renews: {new Date(subscriptionEnd).toLocaleDateString()}
+                    </span>
+                  )}
+                </p>
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  className="w-full"
+                  onClick={async () => {
+                    setIsOpeningPortal(true);
+                    await openCustomerPortal();
+                    setIsOpeningPortal(false);
+                  }}
+                  disabled={isOpeningPortal}
+                >
+                  {isOpeningPortal ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <CreditCard className="h-4 w-4 mr-2" />
+                  )}
+                  Manage Subscription
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  10 messages/day, limited history
+                </p>
+                <Button 
+                  size="sm"
+                  className="w-full gradient-primary"
+                  onClick={() => setShowUpgradeModal(true)}
+                >
+                  <Crown className="h-4 w-4 mr-2" />
+                  Upgrade to Pro — $9.99/mo
+                </Button>
+              </div>
+            )}
+          </div>
+        </div>
+
         {/* Menu Items */}
         <div className="px-6 space-y-2">
           {menuItems.map(({ icon: Icon, label, path }) => (
@@ -166,6 +235,19 @@ export default function Profile() {
               <ChevronRight className="h-5 w-5 text-muted-foreground" />
             </button>
           ))}
+        </div>
+
+        {/* Beta Disclaimer */}
+        <div className="mx-6 mt-6 rounded-xl bg-muted/50 border border-border p-4">
+          <div className="flex items-start gap-3">
+            <FlaskConical className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-medium text-foreground">Beta Version</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Features and limits may change as we improve. Thanks for being an early user!
+              </p>
+            </div>
+          </div>
         </div>
 
         {/* Logout */}
@@ -184,6 +266,13 @@ export default function Profile() {
             Sign Out
           </Button>
         </div>
+
+        {/* Upgrade Modal */}
+        <UpgradeModal 
+          open={showUpgradeModal}
+          onOpenChange={setShowUpgradeModal}
+          reason="feature"
+        />
       </div>
     </AppLayout>
   );
