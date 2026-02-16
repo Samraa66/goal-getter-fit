@@ -429,6 +429,69 @@ export type Database = {
           },
         ]
       }
+      meal_templates: {
+        Row: {
+          created_at: string | null
+          data: Json
+          difficulty: string | null
+          equipment_type: string | null
+          goal_type: string | null
+          id: string
+          meal_type: string | null
+          name: string
+          per_serving_calories: number | null
+          per_serving_carbs: number | null
+          per_serving_fats: number | null
+          per_serving_protein: number | null
+          servings: number | null
+          tags: string[] | null
+          total_calories: number | null
+          total_carbs: number | null
+          total_fats: number | null
+          total_protein: number | null
+        }
+        Insert: {
+          created_at?: string | null
+          data: Json
+          difficulty?: string | null
+          equipment_type?: string | null
+          goal_type?: string | null
+          id?: string
+          meal_type?: string | null
+          name: string
+          per_serving_calories?: number | null
+          per_serving_carbs?: number | null
+          per_serving_fats?: number | null
+          per_serving_protein?: number | null
+          servings?: number | null
+          tags?: string[] | null
+          total_calories?: number | null
+          total_carbs?: number | null
+          total_fats?: number | null
+          total_protein?: number | null
+        }
+        Update: {
+          created_at?: string | null
+          data?: Json
+          difficulty?: string | null
+          equipment_type?: string | null
+          goal_type?: string | null
+          id?: string
+          meal_type?: string | null
+          name?: string
+          per_serving_calories?: number | null
+          per_serving_carbs?: number | null
+          per_serving_fats?: number | null
+          per_serving_protein?: number | null
+          servings?: number | null
+          tags?: string[] | null
+          total_calories?: number | null
+          total_carbs?: number | null
+          total_fats?: number | null
+          total_protein?: number | null
+        }
+        Relationships: []
+      }
       meals: {
         Row: {
           calories: number | null
@@ -741,6 +804,59 @@ export type Database = {
         }
         Relationships: []
       }
+      user_meals: {
+        Row: {
+          base_template_id: string | null
+          created_at: string | null
+          date_assigned: string
+          id: string
+          is_completed: boolean | null
+          meal_type: string
+          personalized_data: Json
+          total_calories: number | null
+          total_carbs: number | null
+          total_fats: number | null
+          total_protein: number | null
+          user_id: string
+        }
+        Insert: {
+          base_template_id?: string | null
+          created_at?: string | null
+          date_assigned: string
+          id?: string
+          is_completed?: boolean | null
+          meal_type: string
+          personalized_data: Json
+          total_calories?: number | null
+          total_carbs?: number | null
+          total_fats?: number | null
+          total_protein?: number | null
+          user_id: string
+        }
+        Update: {
+          base_template_id?: string | null
+          created_at?: string | null
+          date_assigned?: string
+          id?: string
+          is_completed?: boolean | null
+          meal_type?: string
+          personalized_data?: Json
+          total_calories?: number | null
+          total_carbs?: number | null
+          total_fats?: number | null
+          total_protein?: number | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_meals_base_template_id_fkey"
+            columns: ["base_template_id"]
+            isOneToOne: false
+            referencedRelation: "meal_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_subscriptions: {
         Row: {
           created_at: string | null
@@ -773,6 +889,50 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      user_workouts: {
+        Row: {
+          base_template_id: string | null
+          completed_at: string | null
+          created_at: string | null
+          date_assigned: string
+          day_of_week: number | null
+          id: string
+          is_completed: boolean | null
+          personalized_data: Json
+          user_id: string
+        }
+        Insert: {
+          base_template_id?: string | null
+          completed_at?: string | null
+          created_at?: string | null
+          date_assigned: string
+          day_of_week?: number | null
+          id?: string
+          is_completed?: boolean | null
+          personalized_data: Json
+          user_id: string
+        }
+        Update: {
+          base_template_id?: string | null
+          completed_at?: string | null
+          created_at?: string | null
+          date_assigned?: string
+          day_of_week?: number | null
+          id?: string
+          is_completed?: boolean | null
+          personalized_data?: Json
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_workouts_base_template_id_fkey"
+            columns: ["base_template_id"]
+            isOneToOne: false
+            referencedRelation: "workout_templates"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       weekly_checkins: {
         Row: {
@@ -867,6 +1027,42 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      workout_templates: {
+        Row: {
+          created_at: string | null
+          data: Json
+          difficulty: string | null
+          duration_minutes: number | null
+          equipment_type: string | null
+          goal_type: string | null
+          id: string
+          name: string
+          tags: string[] | null
+        }
+        Insert: {
+          created_at?: string | null
+          data: Json
+          difficulty?: string | null
+          duration_minutes?: number | null
+          equipment_type?: string | null
+          goal_type?: string | null
+          id?: string
+          name: string
+          tags?: string[] | null
+        }
+        Update: {
+          created_at?: string | null
+          data?: Json
+          difficulty?: string | null
+          duration_minutes?: number | null
+          equipment_type?: string | null
+          goal_type?: string | null
+          id?: string
+          name?: string
+          tags?: string[] | null
+        }
+        Relationships: []
       }
       workouts: {
         Row: {
