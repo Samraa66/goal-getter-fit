@@ -56,3 +56,6 @@ verify_jwt = true
 
 [functions.personalize-workout]
 verify_jwt = true
+
+[functions.generate-weekly-meal-plan]
+verify_jwt = true

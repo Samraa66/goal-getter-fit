@@ -804,6 +804,44 @@ export type Database = {
         }
         Relationships: []
       }
+      user_daily_meals: {
+        Row: {
+          created_at: string | null
+          date: string
+          id: string
+          meal_slot: string
+          servings_used: number | null
+          user_id: string
+          user_meal_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          date: string
+          id?: string
+          meal_slot: string
+          servings_used?: number | null
+          user_id: string
+          user_meal_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          date?: string
+          id?: string
+          meal_slot?: string
+          servings_used?: number | null
+          user_id?: string
+          user_meal_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_daily_meals_user_meal_id_fkey"
+            columns: ["user_meal_id"]
+            isOneToOne: false
+            referencedRelation: "user_meals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_meals: {
         Row: {
           base_template_id: string | null
@@ -813,10 +851,12 @@ export type Database = {
           is_completed: boolean | null
           meal_type: string
           personalized_data: Json
+          remaining_servings: number | null
           total_calories: number | null
           total_carbs: number | null
           total_fats: number | null
           total_protein: number | null
+          total_servings: number | null
           user_id: string
         }
         Insert: {
@@ -827,10 +867,12 @@ export type Database = {
           is_completed?: boolean | null
           meal_type: string
           personalized_data: Json
+          remaining_servings?: number | null
           total_calories?: number | null
           total_carbs?: number | null
           total_fats?: number | null
           total_protein?: number | null
+          total_servings?: number | null
           user_id: string
         }
         Update: {
@@ -841,10 +883,12 @@ export type Database = {
           is_completed?: boolean | null
           meal_type?: string
           personalized_data?: Json
+          remaining_servings?: number | null
           total_calories?: number | null
           total_carbs?: number | null
           total_fats?: number | null
           total_protein?: number | null
+          total_servings?: number | null
           user_id?: string
         }
         Relationships: [

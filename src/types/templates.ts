@@ -76,6 +76,18 @@ export interface UserMeal {
   total_protein: number | null;
   total_carbs: number | null;
   total_fats: number | null;
+  total_servings: number | null;
+  remaining_servings: number | null;
+  created_at: string;
+}
+
+export interface UserDailyMeal {
+  id: string;
+  user_id: string;
+  date: string;
+  meal_slot: string;
+  user_meal_id: string;
+  servings_used: number;
   created_at: string;
 }
 
