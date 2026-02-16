@@ -18,6 +18,7 @@ interface MealCardProps {
   recipe?: string;
   description?: string;
   ingredients?: MealIngredient[];
+  recipeSteps?: string[];
   isCompleted?: boolean;
   onSwap?: () => void;
   onToggleComplete?: (completed: boolean) => void;
@@ -67,13 +68,15 @@ export function MealCard({
   recipe,
   description,
   ingredients,
+  recipeSteps,
   isCompleted = false,
   onSwap,
   onToggleComplete,
 }: MealCardProps) {
   const [showRecipe, setShowRecipe] = useState(false);
   const [showIngredients, setShowIngredients] = useState(false);
-  const recipeSteps = recipe ? parseRecipeSteps(recipe) : [];
+  const legacyRecipeSteps = recipe ? parseRecipeSteps(recipe) : [];
+  const allRecipeSteps = recipeSteps && recipeSteps.length > 0 ? recipeSteps : legacyRecipeSteps;
 
   return (
     <div
@@ -183,8 +186,8 @@ export function MealCard({
           </Collapsible>
         )}
 
-        {/* Legacy Recipe Section */}
-        {recipe && recipeSteps.length > 0 && (
+        {/* Recipe Section */}
+        {allRecipeSteps.length > 0 && (
           <Collapsible open={showRecipe} onOpenChange={setShowRecipe} className="mt-4">
             <CollapsibleTrigger asChild>
               <Button variant="ghost" size="sm" className="w-full justify-between text-foreground hover:text-foreground">
@@ -198,7 +201,7 @@ export function MealCard({
             <CollapsibleContent className="mt-2">
               <div className="rounded-lg bg-secondary/30 p-4">
                 <ol className="space-y-3">
-                  {recipeSteps.map((step, index) => (
+                  {allRecipeSteps.map((step, index) => (
                     <li key={index} className="flex gap-3 text-sm text-foreground">
                       <span className="flex-shrink-0 flex items-center justify-center w-6 h-6 rounded-full bg-primary/20 text-primary text-xs font-bold">
                         {index + 1}

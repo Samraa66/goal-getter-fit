@@ -55,6 +55,7 @@ export default function Meals() {
     return {
       name: personalizedData?.meal_name || "Meal",
       ingredients: personalizedData?.ingredients || [],
+      recipeSteps: personalizedData?.recipe_steps || [],
     };
   };
 
@@ -162,6 +163,7 @@ export default function Meals() {
                       carbs={meal.total_carbs || 0}
                       fats={meal.total_fats || 0}
                       ingredients={data.ingredients}
+                      recipeSteps={data.recipeSteps}
                       isCompleted={meal.is_completed}
                       onToggleComplete={(completed) => toggleComplete(meal.id, completed)}
                     />
@@ -202,6 +204,7 @@ export default function Meals() {
                       carbs={meal.total_carbs || 0}
                       fats={meal.total_fats || 0}
                       ingredients={data.ingredients}
+                      recipeSteps={data.recipeSteps}
                       isCompleted={meal.is_completed}
                       onToggleComplete={(completed) => toggleTomorrowComplete(meal.id, completed)}
                     />

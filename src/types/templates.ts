@@ -17,6 +17,7 @@ export interface MealStructure {
   meal_name: string;
   servings: number;
   ingredients: MealIngredient[];
+  recipe_steps?: string[];
 }
 
 export interface MealTemplate {
