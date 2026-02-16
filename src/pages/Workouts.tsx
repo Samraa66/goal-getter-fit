@@ -8,16 +8,16 @@ import { WorkoutProgress } from "@/components/workouts/WorkoutProgress";
 import { WorkoutSchedule } from "@/components/workouts/WorkoutSchedule";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Calendar, TrendingUp, Loader2, Sparkles, Edit3, Lock, Flame, Dumbbell, Clock, Leaf } from "lucide-react";
+import { Calendar, TrendingUp, Loader2, Sparkles, Edit3, Lock, Flame, Dumbbell, Clock } from "lucide-react";
 import { GuidedRecoveryDay } from "@/components/workouts/GuidedRecoveryDay";
-import { useWorkoutProgram } from "@/hooks/useWorkoutProgram";
+import { useTemplateWorkouts } from "@/hooks/useTemplateWorkouts";
 import { useWorkoutHistory } from "@/hooks/useWorkoutHistory";
 import { useStreak } from "@/hooks/useStreak";
 import { usePlanRefresh } from "@/hooks/usePlanRefresh";
-import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
+import type { WorkoutStructure } from "@/types/templates";
 
 const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -42,50 +42,68 @@ export default function Workouts() {
   const [showProgress, setShowProgress] = useState(false);
   const [showSchedule, setShowSchedule] = useState(false);
 
-  const { 
-    program, 
-    isLoading, 
-    isGenerating, 
-    generateProgram, 
+  const {
+    userWorkouts,
+    todayWorkout,
+    completedThisWeek,
+    isLoading,
+    isGenerating,
+    generateProgram,
     completeWorkout,
-    completeExercise,
-    refetch: refetchProgram
-  } = useWorkoutProgram();
+    refetch: refetchProgram,
+  } = useTemplateWorkouts();
 
   // Listen for refresh events from Coach AI
   const handleWorkoutsRefresh = useCallback(() => {
-    console.log("Workouts page: Received refresh event, refetching...");
     refetchProgram();
   }, [refetchProgram]);
-  
   usePlanRefresh(undefined, handleWorkoutsRefresh);
 
   const { completedWorkouts, isLoading: isLoadingHistory } = useWorkoutHistory();
   const { currentStreak, todayComplete, workoutDone, mealsDone, refetch: refetchStreak } = useStreak();
 
-  // Cache program to prevent data loss on tab switches
-  const cachedProgram = useRef(program);
-  if (program) {
-    cachedProgram.current = program;
-  }
-  const displayProgram = program || cachedProgram.current;
-
   const today = new Date().getDay();
-  const todayWorkout = displayProgram?.workouts.find(w => w.day_of_week === today);
-  const completedThisWeek = displayProgram?.workouts.filter(w => w.is_completed).length || 0;
 
-  const canStartWorkout = (workout: any) => {
+  // Map UserWorkout to the format needed by WorkoutCard/ActiveWorkout
+  const mapWorkout = (uw: typeof userWorkouts[number]) => {
+    const data = uw.personalized_data as WorkoutStructure;
+    const exercises = (data?.exercises || []).map((ex, i) => ({
+      id: `${uw.id}-ex-${i}`,
+      name: ex.exercise_name,
+      muscle_groups: ex.muscle_group,
+      how_to: ex.how_to || "",
+      sets: ex.sets,
+      reps: String(ex.reps),
+      rest_seconds: ex.rest_seconds,
+      order_index: i,
+      is_completed: false,
+    }));
+    return {
+      id: uw.id,
+      name: data?.workout_name || "Workout",
+      workout_type: "strength" as const,
+      day_of_week: uw.day_of_week || 0,
+      duration_minutes: 45,
+      is_completed: uw.is_completed,
+      exercises,
+    };
+  };
+
+  const mappedWorkouts = userWorkouts.map(mapWorkout);
+  const mappedToday = todayWorkout ? mapWorkout(todayWorkout) : null;
+
+  const canStartWorkout = (workout: ReturnType<typeof mapWorkout>) => {
     if (workout.is_completed) return false;
     if (workout.day_of_week !== today) return false;
     return true;
   };
 
-  const isWorkoutLocked = (workout: any) => {
+  const isWorkoutLocked = (workout: ReturnType<typeof mapWorkout>) => {
     if (workout.is_completed) return false;
     return workout.day_of_week !== today;
   };
 
-  const handleStartWorkout = (workout: any) => {
+  const handleStartWorkout = (workout: ReturnType<typeof mapWorkout>) => {
     if (!canStartWorkout(workout)) {
       if (workout.day_of_week !== today) {
         toast({
@@ -95,7 +113,6 @@ export default function Workouts() {
       }
       return;
     }
-    
     if (!workout.exercises || workout.exercises.length === 0) {
       toast({
         title: "No exercises found",
@@ -113,61 +130,10 @@ export default function Workouts() {
     });
   };
 
-  const handleSwapExercise = async (exerciseId: string, reason: string) => {
-    if (!activeWorkout || !user) return null;
-    
-    const currentExercise = activeWorkout.exercises.find(e => e.id === exerciseId);
-    if (!currentExercise) return null;
-
-    try {
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("experience_level, workout_location")
-        .eq("id", user.id)
-        .single();
-
-      const { data, error } = await supabase.functions.invoke("swap-exercise", {
-        body: {
-          currentExercise,
-          reason,
-          profile,
-          workoutType: activeWorkout.workoutType,
-        },
-      });
-
-      if (error) throw error;
-
-      const newExercise = {
-        ...data,
-        id: exerciseId,
-        is_completed: false,
-      };
-
-      toast({
-        title: "Exercise swapped!",
-        description: `Try ${data.name} instead`,
-      });
-
-      return newExercise;
-    } catch (error) {
-      console.error("Error swapping exercise:", error);
-      toast({
-        title: "Couldn't find alternative",
-        description: "Please try again",
-        variant: "destructive",
-      });
-      return null;
-    }
-  };
-
   const handleWorkoutComplete = async () => {
     if (!activeWorkout) return;
-    
     await completeWorkout(activeWorkout.id);
-    
-    // Refetch streak after completing workout
     await refetchStreak();
-    
     setShowComplete({
       name: activeWorkout.name,
       duration: activeWorkout.duration,
@@ -177,10 +143,6 @@ export default function Workouts() {
     setActiveWorkout(null);
   };
 
-  const handleCloseComplete = () => {
-    setShowComplete(null);
-  };
-
   if (activeWorkout) {
     return (
       <ActiveWorkout
@@ -188,8 +150,8 @@ export default function Workouts() {
         exercises={activeWorkout.exercises}
         onComplete={handleWorkoutComplete}
         onClose={() => setActiveWorkout(null)}
-        onExerciseComplete={completeExercise}
-        onSwapExercise={handleSwapExercise}
+        onExerciseComplete={() => {}}
+        onSwapExercise={async () => null}
       />
     );
   }
@@ -201,7 +163,7 @@ export default function Workouts() {
         duration={showComplete.duration}
         caloriesBurned={showComplete.calories}
         exercisesCompleted={showComplete.exercises}
-        onClose={handleCloseComplete}
+        onClose={() => setShowComplete(null)}
       />
     );
   }
@@ -216,10 +178,10 @@ export default function Workouts() {
     );
   }
 
-  if (showSchedule && displayProgram?.workouts) {
+  if (showSchedule && mappedWorkouts.length > 0) {
     return (
       <WorkoutSchedule
-        workouts={displayProgram.workouts}
+        workouts={mappedWorkouts}
         onClose={() => setShowSchedule(false)}
       />
     );
@@ -230,16 +192,11 @@ export default function Workouts() {
       <Sparkles className="h-12 w-12 text-muted-foreground mb-4" />
       <p className="text-muted-foreground mb-2">No workout program yet</p>
       <p className="text-xs text-muted-foreground mb-6 max-w-xs">
-        Generate an AI-powered program tailored to your goals, or follow your own routine
+        Generate a program tailored to your goals from our curated templates.
       </p>
-      
       {!showCustomOption ? (
         <div className="flex flex-col gap-3 w-full max-w-xs">
-          <Button 
-            className="gradient-primary w-full" 
-            onClick={generateProgram}
-            disabled={isGenerating}
-          >
+          <Button className="gradient-primary w-full" onClick={generateProgram} disabled={isGenerating}>
             {isGenerating ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -248,15 +205,11 @@ export default function Workouts() {
             ) : (
               <>
                 <Sparkles className="mr-2 h-4 w-4" />
-                Generate AI Program
+                Generate Program
               </>
             )}
           </Button>
-          <Button 
-            variant="outline" 
-            className="w-full"
-            onClick={() => setShowCustomOption(true)}
-          >
+          <Button variant="outline" className="w-full" onClick={() => setShowCustomOption(true)}>
             <Edit3 className="mr-2 h-4 w-4" />
             I Have My Own Program
           </Button>
@@ -266,8 +219,8 @@ export default function Workouts() {
           <p className="text-sm text-muted-foreground mb-2">
             Custom workout logging coming soon! For now, generate a program and modify exercises as needed.
           </p>
-          <Button 
-            className="gradient-primary w-full" 
+          <Button
+            className="gradient-primary w-full"
             onClick={() => {
               setShowCustomOption(false);
               generateProgram();
@@ -277,11 +230,7 @@ export default function Workouts() {
             <Sparkles className="mr-2 h-4 w-4" />
             Generate Program Instead
           </Button>
-          <Button 
-            variant="ghost" 
-            size="sm"
-            onClick={() => setShowCustomOption(false)}
-          >
+          <Button variant="ghost" size="sm" onClick={() => setShowCustomOption(false)}>
             Go Back
           </Button>
         </div>
@@ -324,16 +273,16 @@ export default function Workouts() {
         </div>
 
         {/* Progress Bar */}
-        {program && (
+        {mappedWorkouts.length > 0 && (
           <div className="mx-6 mb-4 rounded-xl bg-card border border-border p-4">
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm text-muted-foreground">Weekly Progress</span>
-              <span className="text-sm font-medium text-primary">{completedThisWeek}/{program.workouts.length} workouts</span>
+              <span className="text-sm font-medium text-primary">{completedThisWeek}/{mappedWorkouts.length} workouts</span>
             </div>
             <div className="h-2 rounded-full bg-secondary">
               <div
                 className="h-2 rounded-full bg-primary transition-all duration-500"
-                style={{ width: `${(completedThisWeek / Math.max(program.workouts.length, 1)) * 100}%` }}
+                style={{ width: `${(completedThisWeek / Math.max(mappedWorkouts.length, 1)) * 100}%` }}
               />
             </div>
           </div>
@@ -345,11 +294,11 @@ export default function Workouts() {
             <TrendingUp className="mr-2 h-4 w-4" />
             Progress
           </Button>
-          <Button 
-            variant="outline" 
-            className="flex-1" 
+          <Button
+            variant="outline"
+            className="flex-1"
             onClick={() => setShowSchedule(true)}
-            disabled={!displayProgram?.workouts?.length}
+            disabled={mappedWorkouts.length === 0}
           >
             <Calendar className="mr-2 h-4 w-4" />
             Schedule
@@ -369,34 +318,24 @@ export default function Workouts() {
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
               </div>
-            ) : todayWorkout ? (
+            ) : mappedToday ? (
               <>
                 <WorkoutCard
-                  name={todayWorkout.name}
-                  type={todayWorkout.workout_type}
-                  duration={todayWorkout.duration_minutes}
+                  name={mappedToday.name}
+                  type={mappedToday.workout_type}
+                  duration={mappedToday.duration_minutes}
                   calories={300}
-                  exercises={todayWorkout.exercises.length}
-                  completed={todayWorkout.is_completed}
-                  onStart={todayWorkout.is_completed ? undefined : () => handleStartWorkout(todayWorkout)}
+                  exercises={mappedToday.exercises.length}
+                  completed={mappedToday.is_completed}
+                  onStart={mappedToday.is_completed ? undefined : () => handleStartWorkout(mappedToday)}
                 />
-                <Button 
-                  variant="outline" 
-                  className="w-full border-dashed"
-                  onClick={generateProgram}
-                  disabled={isGenerating}
-                >
-                  {isGenerating ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <Sparkles className="mr-2 h-4 w-4" />
-                  )}
+                <Button variant="outline" className="w-full border-dashed" onClick={generateProgram} disabled={isGenerating}>
+                  {isGenerating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
                   Generate New Program
                 </Button>
               </>
-            ) : program ? (
+            ) : mappedWorkouts.length > 0 ? (
               <GuidedRecoveryDay />
-            
             ) : (
               <EmptyState />
             )}
@@ -407,24 +346,19 @@ export default function Workouts() {
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
               </div>
-            ) : program?.workouts && program.workouts.length > 0 ? (
+            ) : mappedWorkouts.length > 0 ? (
               <>
-                {program.workouts
+                {mappedWorkouts
                   .slice()
                   .sort((a, b) => a.day_of_week - b.day_of_week)
                   .map((workout) => {
                     const locked = isWorkoutLocked(workout);
                     const isToday = workout.day_of_week === today;
-                    
                     return (
                       <div key={workout.id} className="flex items-center gap-3">
                         <div className={`w-10 text-center ${isToday ? 'text-primary font-bold' : ''}`}>
-                          <span className="text-xs font-medium">
-                            {dayNames[workout.day_of_week]}
-                          </span>
-                          {isToday && (
-                            <div className="w-1.5 h-1.5 rounded-full bg-primary mx-auto mt-1" />
-                          )}
+                          <span className="text-xs font-medium">{dayNames[workout.day_of_week]}</span>
+                          {isToday && <div className="w-1.5 h-1.5 rounded-full bg-primary mx-auto mt-1" />}
                         </div>
                         <div className="flex-1 relative">
                           <WorkoutCard
@@ -440,9 +374,7 @@ export default function Workouts() {
                             <div className="absolute inset-0 bg-background/60 backdrop-blur-[1px] rounded-xl flex items-center justify-center">
                               <div className="flex items-center gap-2 text-muted-foreground">
                                 <Lock className="h-4 w-4" />
-                                <span className="text-sm">
-                                  {workout.day_of_week < today ? "Missed" : "Upcoming"}
-                                </span>
+                                <span className="text-sm">{workout.day_of_week < today ? "Missed" : "Upcoming"}</span>
                               </div>
                             </div>
                           )}
@@ -476,11 +408,9 @@ export default function Workouts() {
                       {workout.duration_minutes} min
                     </div>
                   </div>
-                  
-                  {/* Exercise List */}
                   <div className="space-y-2">
                     <p className="text-xs text-muted-foreground font-medium">Exercises Completed:</p>
-                    {workout.exercises.map((exercise) => (
+                    {workout.exercises.map((exercise: any) => (
                       <div key={exercise.id} className="flex items-center justify-between text-sm py-1 border-b border-border/50 last:border-0">
                         <div className="flex items-center gap-2">
                           <Dumbbell className="h-3 w-3 text-primary" />
@@ -504,8 +434,7 @@ export default function Workouts() {
             )}
           </TabsContent>
         </Tabs>
-        
-        {/* Bottom spacer */}
+
         <div className="h-6" />
       </PageContainer>
     </AppLayout>

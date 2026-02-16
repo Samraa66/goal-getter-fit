@@ -8,13 +8,14 @@ import { Button } from "@/components/ui/button";
 import { ChevronRight, Sparkles, Loader2, LogOut } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
-import { useMealPlan } from "@/hooks/useMealPlan";
-import { useWorkoutProgram } from "@/hooks/useWorkoutProgram";
+import { useTemplateMeals } from "@/hooks/useTemplateMeals";
+import { useTemplateWorkouts } from "@/hooks/useTemplateWorkouts";
 import { useStreak } from "@/hooks/useStreak";
 import { useWaterIntake } from "@/hooks/useWaterIntake";
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import type { MealStructure, WorkoutStructure } from "@/types/templates";
 
 const mealTypeOrder = ["breakfast", "lunch", "snack", "dinner"];
 
@@ -22,20 +23,11 @@ export default function Index() {
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
   const { toast } = useToast();
-  const { mealPlan, isLoading: mealsLoading, toggleMealComplete, refetch: refetchMeals } = useMealPlan();
-  const { program, isLoading: workoutsLoading } = useWorkoutProgram();
+  const { userMeals, isLoading: mealsLoading, toggleComplete, refetch: refetchMeals, consumedCalories, consumedProtein } = useTemplateMeals();
+  const { userWorkouts, todayWorkout, isLoading: workoutsLoading } = useTemplateWorkouts();
   const { currentStreak, isLoading: streakLoading, refetch: refetchStreak } = useStreak();
   const { glasses, liters, targetLiters, addWater, isLoading: waterLoading } = useWaterIntake();
 
-  // Cache data refs to prevent flickering on navigation
-  const cachedMealPlan = useRef(mealPlan);
-  const cachedProgram = useRef(program);
-  
-  if (mealPlan) cachedMealPlan.current = mealPlan;
-  if (program) cachedProgram.current = program;
-  
-  const displayMealPlan = mealPlan || cachedMealPlan.current;
-  const displayProgram = program || cachedProgram.current;
   const [profile, setProfile] = useState<{ full_name?: string; daily_calorie_target?: number } | null>(null);
 
   useEffect(() => {
@@ -51,16 +43,8 @@ export default function Index() {
     fetchProfile();
   }, [user]);
 
-  const today = new Date().getDay();
-  const todayWorkout = displayProgram?.workouts.find(w => w.day_of_week === today);
-
-  // Calculate today's stats from COMPLETED meals only
-  const completedMeals = displayMealPlan?.meals.filter(m => m.is_completed) || [];
-  const consumedCalories = completedMeals.reduce((sum, m) => sum + (m.calories || 0), 0);
-  const consumedProtein = completedMeals.reduce((sum, m) => sum + (m.protein || 0), 0);
-  
   const targetCalories = profile?.daily_calorie_target || 2000;
-  const targetProtein = Math.round(targetCalories * 0.3 / 4); // 30% of calories from protein
+  const targetProtein = Math.round(targetCalories * 0.3 / 4);
 
   const todayStats = {
     calories: { consumed: consumedCalories, target: targetCalories },
@@ -72,10 +56,20 @@ export default function Index() {
   const calorieProgress = Math.min((todayStats.calories.consumed / todayStats.calories.target) * 100, 100);
 
   // Get first two meals to display
-  const mealsToDisplay = displayMealPlan?.meals
-    .slice()
+  const mealsToDisplay = [...userMeals]
     .sort((a, b) => mealTypeOrder.indexOf(a.meal_type) - mealTypeOrder.indexOf(b.meal_type))
-    .slice(0, 2) || [];
+    .slice(0, 2);
+
+  // Map today workout for display
+  const mappedTodayWorkout = todayWorkout
+    ? {
+        name: (todayWorkout.personalized_data as WorkoutStructure)?.workout_name || "Workout",
+        type: "strength" as const,
+        duration: 45,
+        exercises: (todayWorkout.personalized_data as WorkoutStructure)?.exercises?.length || 0,
+        completed: todayWorkout.is_completed,
+      }
+    : null;
 
   const firstName = profile?.full_name?.split(" ")[0] || "there";
   const greeting = getGreeting();
@@ -94,8 +88,7 @@ export default function Index() {
   };
 
   const handleMealToggle = async (mealId: string, completed: boolean) => {
-    await toggleMealComplete(mealId, completed);
-    // Refetch streak after completing a meal
+    await toggleComplete(mealId, completed);
     if (completed) {
       await refetchStreak();
     }
@@ -110,9 +103,9 @@ export default function Index() {
             <p className="text-muted-foreground">{greeting},</p>
             <h1 className="text-2xl font-bold text-foreground">{firstName}</h1>
           </div>
-          <Button 
-            variant="ghost" 
-            size="icon" 
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={handleLogout}
             className="text-muted-foreground hover:text-destructive"
           >
@@ -136,10 +129,7 @@ export default function Index() {
 
         {/* Quick Stats */}
         <div className="px-6 py-4">
-          <QuickStats 
-            {...todayStats} 
-            onAddWater={() => addWater(1)}
-          />
+          <QuickStats {...todayStats} onAddWater={() => addWater(1)} />
         </div>
 
         {/* AI Coach Prompt */}
@@ -175,20 +165,24 @@ export default function Index() {
                 <Loader2 className="h-6 w-6 animate-spin text-primary" />
               </div>
             ) : mealsToDisplay.length > 0 ? (
-              mealsToDisplay.map((meal) => (
-                <MealCard
-                  key={meal.id}
-                  id={meal.id}
-                  type={meal.meal_type as "breakfast" | "lunch" | "dinner" | "snack"}
-                  name={meal.name}
-                  calories={meal.calories}
-                  protein={meal.protein}
-                  carbs={meal.carbs}
-                  fats={meal.fats}
-                  isCompleted={meal.is_completed}
-                  onToggleComplete={(completed) => handleMealToggle(meal.id, completed)}
-                />
-              ))
+              mealsToDisplay.map((meal) => {
+                const data = meal.personalized_data as MealStructure;
+                return (
+                  <MealCard
+                    key={meal.id}
+                    id={meal.id}
+                    type={meal.meal_type as "breakfast" | "lunch" | "dinner" | "snack"}
+                    name={data?.meal_name || "Meal"}
+                    calories={meal.total_calories || 0}
+                    protein={meal.total_protein || 0}
+                    carbs={meal.total_carbs || 0}
+                    fats={meal.total_fats || 0}
+                    ingredients={data?.ingredients}
+                    isCompleted={meal.is_completed}
+                    onToggleComplete={(completed) => handleMealToggle(meal.id, completed)}
+                  />
+                );
+              })
             ) : (
               <div className="text-center py-6">
                 <p className="text-muted-foreground text-sm mb-3">No meals planned yet</p>
@@ -216,17 +210,17 @@ export default function Index() {
             <div className="flex items-center justify-center py-8">
               <Loader2 className="h-6 w-6 animate-spin text-primary" />
             </div>
-          ) : todayWorkout ? (
+          ) : mappedTodayWorkout ? (
             <WorkoutCard
-              name={todayWorkout.name}
-              type={todayWorkout.workout_type}
-              duration={todayWorkout.duration_minutes}
+              name={mappedTodayWorkout.name}
+              type={mappedTodayWorkout.type}
+              duration={mappedTodayWorkout.duration}
               calories={300}
-              exercises={todayWorkout.exercises.length}
-              completed={todayWorkout.is_completed}
-              onStart={todayWorkout.is_completed ? undefined : () => navigate("/workouts")}
+              exercises={mappedTodayWorkout.exercises}
+              completed={mappedTodayWorkout.completed}
+              onStart={mappedTodayWorkout.completed ? undefined : () => navigate("/workouts")}
             />
-          ) : displayProgram ? (
+          ) : userWorkouts.length > 0 ? (
             <div className="text-center py-6 bg-card border border-border rounded-xl">
               <p className="text-muted-foreground text-sm">Rest day! No workout scheduled.</p>
             </div>
@@ -240,8 +234,7 @@ export default function Index() {
             </div>
           )}
         </div>
-        
-        {/* Bottom spacer for content */}
+
         <div className="h-6" />
       </PageContainer>
     </AppLayout>
