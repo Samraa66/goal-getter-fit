@@ -48,7 +48,7 @@ export function useTemplateWorkouts() {
         .eq("id", user.id)
         .single();
 
-      const goalType = profile?.fitness_goal || "general_health";
+      const goalType = mapGoalToTemplateType(profile?.fitness_goal);
       const difficulty = profile?.experience_level || "beginner";
       const workoutsPerWeek = profile?.workouts_per_week || 3;
 
@@ -179,6 +179,21 @@ export function useTemplateWorkouts() {
     completeWorkout,
     refetch: fetchWorkouts,
   };
+}
+
+// Map profile fitness_goal values to template goal_type values
+function mapGoalToTemplateType(fitnessGoal: string | null | undefined): string {
+  const mapping: Record<string, string> = {
+    gain_muscle: "muscle_gain",
+    lose_weight: "weight_loss",
+    improve_fitness: "general_health",
+    maintain: "general_health",
+    bulk: "bulk",
+    muscle_gain: "muscle_gain",
+    weight_loss: "weight_loss",
+    general_health: "general_health",
+  };
+  return mapping[fitnessGoal || ""] || "general_health";
 }
 
 function selectWorkoutsForWeek(
