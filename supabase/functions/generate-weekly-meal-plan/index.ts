@@ -74,14 +74,15 @@ function scaleTemplate(template: any, targetCalories: number) {
 // ─── Goal Mapping ───────────────────────────────────────────────────
 function mapGoalToTemplateType(fitnessGoal: string | null): string {
   const mapping: Record<string, string> = {
-    gain_muscle: "muscle_gain",
-    lose_weight: "weight_loss",
-    improve_fitness: "general_health",
-    maintain: "general_health",
+    gain_muscle: "bulk",
+    lose_weight: "cut",
+    improve_fitness: "maintain",
+    maintain: "maintain",
     bulk: "bulk",
-    muscle_gain: "muscle_gain",
-    weight_loss: "weight_loss",
-    general_health: "general_health",
+    muscle_gain: "bulk",
+    weight_loss: "cut",
+    general_health: "maintain",
+    cut: "cut",
   };
   return mapping[fitnessGoal || ""] || "general_health";
 }
