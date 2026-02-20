@@ -76,174 +76,6 @@ export function useProfileUpdates() {
     }
   }, []);
 
-  // Save generated meal plan to database
-  const saveMealPlan = async (
-    userId: string,
-    generatedPlan: any,
-    dateStr: string
-  ): Promise<boolean> => {
-    try {
-      // Delete existing plan for this date if any
-      const { data: existingPlan, error: existingPlanError } = await supabase
-        .from("meal_plans")
-        .select("id")
-        .eq("user_id", userId)
-        .eq("plan_date", dateStr)
-        .maybeSingle();
-
-      if (existingPlanError) {
-        console.error("Failed to check existing meal plan:", existingPlanError);
-        return false;
-      }
-
-      if (existingPlan) {
-        const { error: deleteMealsError } = await supabase
-          .from("meals")
-          .delete()
-          .eq("meal_plan_id", existingPlan.id);
-        if (deleteMealsError) {
-          console.error("Failed to delete existing meals:", deleteMealsError);
-          return false;
-        }
-
-        const { error: deletePlanError } = await supabase
-          .from("meal_plans")
-          .delete()
-          .eq("id", existingPlan.id);
-        if (deletePlanError) {
-          console.error("Failed to delete existing meal plan:", deletePlanError);
-          return false;
-        }
-      }
-
-      // Save the new meal plan
-      const { data: newPlan, error: planInsertError } = await supabase
-        .from("meal_plans")
-        .insert({
-          user_id: userId,
-          plan_date: dateStr,
-          total_calories: generatedPlan.total_calories,
-          total_protein: generatedPlan.total_protein,
-          total_carbs: generatedPlan.total_carbs,
-          total_fats: generatedPlan.total_fats,
-        })
-        .select()
-        .single();
-
-      if (planInsertError) {
-        console.error("Failed to insert meal plan:", planInsertError);
-        return false;
-      }
-
-      // Save meals
-      const mealsToInsert = generatedPlan.meals.map((meal: any) => ({
-        meal_plan_id: newPlan.id,
-        meal_type: meal.meal_type,
-        name: meal.name,
-        description: meal.description,
-        calories: meal.calories,
-        protein: meal.protein,
-        carbs: meal.carbs,
-        fats: meal.fats,
-        recipe: meal.recipe,
-      }));
-
-      const { error: mealsInsertError } = await supabase
-        .from("meals")
-        .insert(mealsToInsert);
-
-      if (mealsInsertError) {
-        console.error("Failed to insert meals:", mealsInsertError);
-        return false;
-      }
-
-      console.log("Meal plan saved successfully:", newPlan.id);
-      return true;
-    } catch (error) {
-      console.error("Error saving meal plan:", error);
-      return false;
-    }
-  };
-
-  // Save generated workout program to database
-  const saveWorkoutProgram = async (
-    userId: string,
-    generatedProgram: any
-  ): Promise<boolean> => {
-    try {
-      // Deactivate existing programs
-      await supabase
-        .from("workout_programs")
-        .update({ is_active: false })
-        .eq("user_id", userId);
-
-      // Save the new program
-      const { data: newProgram, error: programInsertError } = await supabase
-        .from("workout_programs")
-        .insert({
-          user_id: userId,
-          name: generatedProgram.program_name || "Workout Program",
-          description: generatedProgram.program_description,
-          week_number: 1,
-          is_active: true,
-        })
-        .select()
-        .single();
-
-      if (programInsertError) {
-        console.error("Failed to insert workout program:", programInsertError);
-        return false;
-      }
-
-      // Save workouts and exercises
-      for (const workout of generatedProgram.workouts || []) {
-        const { data: newWorkout, error: workoutInsertError } = await supabase
-          .from("workouts")
-          .insert({
-            program_id: newProgram.id,
-            name: workout.name,
-            workout_type: workout.workout_type,
-            day_of_week: workout.day_of_week,
-            duration_minutes: workout.duration_minutes,
-          })
-          .select()
-          .single();
-
-        if (workoutInsertError) {
-          console.error("Failed to insert workout:", workoutInsertError);
-          continue; // Continue with other workouts
-        }
-
-        // Save exercises
-        const exercisesToInsert = (workout.exercises || []).map((ex: any, index: number) => ({
-          workout_id: newWorkout.id,
-          name: ex.name,
-          sets: ex.sets,
-          reps: ex.reps,
-          rest_seconds: ex.rest_seconds || 60,
-          notes: ex.notes,
-          order_index: index,
-        }));
-
-        if (exercisesToInsert.length > 0) {
-          const { error: exercisesInsertError } = await supabase
-            .from("exercises")
-            .insert(exercisesToInsert);
-
-          if (exercisesInsertError) {
-            console.error("Failed to insert exercises:", exercisesInsertError);
-          }
-        }
-      }
-
-      console.log("Workout program saved successfully:", newProgram.id);
-      return true;
-    } catch (error) {
-      console.error("Error saving workout program:", error);
-      return false;
-    }
-  };
-
   const triggerRegeneration = useCallback(async (
     userId: string,
     regenerateMeals: boolean,
@@ -258,7 +90,6 @@ export function useProfileUpdates() {
       return { success: true };
     }
 
-    // Set loading state
     setIsRegenerating(true);
     if (regenerateMeals && regenerateWorkouts) {
       setRegenerationType('both');
@@ -271,34 +102,24 @@ export function useProfileUpdates() {
     const promises: Promise<{ success: boolean; type: string; error?: string; coachMessage?: string }>[] = [];
     const targetDate = options?.date || format(new Date(), "yyyy-MM-dd");
     const planModification = options?.planModification;
-    const weeklyActivities = options?.weeklyActivities;
 
     if (regenerateMeals) {
       promises.push(
         (async () => {
           try {
-            const mealAccessToken = await getAccessToken();
-            if (!mealAccessToken) {
-              console.error("No active session for meal regeneration");
-              return { success: false, type: 'meal', error: 'No active session' };
-            }
-            
-            // CRITICAL: Check if we have a specific meal to swap (scoped update)
-            // vs needing to regenerate the entire plan
+            const accessToken = await getAccessToken();
+            if (!accessToken) return { success: false, type: 'meal', error: 'No active session' };
+
             const hasTargetMeal = planModification?.type === 'meal' && planModification?.targetMealType;
-            
+
             if (hasTargetMeal) {
-              // SCOPED UPDATE: Use swap-meal for single meal replacement
+              // SCOPED UPDATE: swap a single meal via swap-meal
               console.log(`Triggering scoped meal swap for ${planModification.targetMealType}...`);
-              
               const response = await fetch(
                 `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/swap-meal`,
                 {
                   method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${mealAccessToken}`,
-                  },
+                  headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
                   body: JSON.stringify({
                     date: targetDate,
                     targetMealType: planModification.targetMealType,
@@ -310,63 +131,35 @@ export function useProfileUpdates() {
 
               if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}));
-                console.error("Failed to swap meal:", response.status, errorData);
                 return { success: false, type: 'meal', error: errorData.error || `HTTP ${response.status}` };
               }
 
               const result = await response.json();
-              
-              if (!result.success) {
-                return { success: false, type: 'meal', error: result.error || 'Failed to swap meal' };
-              }
+              if (!result.success) return { success: false, type: 'meal', error: result.error || 'Failed to swap meal' };
 
-              console.log("Meal swapped successfully:", result.swappedMeal?.new_name);
               emitPlanRefresh("meals");
-              return { 
-                success: true, 
-                type: 'meal', 
-                coachMessage: result.message || `I updated your ${planModification.targetMealType}. Let me know if you want to change another meal.`
+              return {
+                success: true,
+                type: 'meal',
+                coachMessage: result.message || `I updated your ${planModification.targetMealType}.`,
               };
             } else {
-              // FULL REGENERATION: No specific meal target, regenerate entire plan
-              console.log("Triggering full meal plan regeneration...");
-              
+              // FULL REGENERATION: Use template-based generate-weekly-meal-plan
+              console.log("Triggering full meal plan regeneration via template engine...");
               const response = await fetch(
-                `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-meal-plan`,
+                `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-weekly-meal-plan`,
                 {
                   method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${mealAccessToken}`,
-                  },
-                  body: JSON.stringify({
-                    date: targetDate,
-                    isModification: true,
-                    modification: planModification,
-                  }),
+                  headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+                  body: JSON.stringify({}),
                 }
               );
 
               if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}));
-                console.error("Failed to generate meal plan:", response.status, errorData);
                 return { success: false, type: 'meal', error: errorData.error || `HTTP ${response.status}` };
               }
 
-              const generatedPlan = await response.json();
-              
-              if (!generatedPlan.meals || !Array.isArray(generatedPlan.meals)) {
-                console.error("Invalid meal plan response:", generatedPlan);
-                return { success: false, type: 'meal', error: 'Invalid meal plan structure' };
-              }
-
-              const saved = await saveMealPlan(userId, generatedPlan, targetDate);
-              
-              if (!saved) {
-                return { success: false, type: 'meal', error: 'Failed to save meal plan' };
-              }
-
-              console.log("Meal plan saved, emitting refresh event");
               emitPlanRefresh("meals");
               return { success: true, type: 'meal' };
             }
@@ -382,55 +175,25 @@ export function useProfileUpdates() {
       promises.push(
         (async () => {
           try {
-            // Get fresh access token for regeneration
-            const workoutAccessToken = await getAccessToken();
-            if (!workoutAccessToken) {
-              console.error("No active session for workout regeneration");
-              return { success: false, type: 'workout', error: 'No active session' };
-            }
-            
-            console.log("Triggering workout program regeneration...");
-            
-            // Call edge function to generate new workout program
+            const accessToken = await getAccessToken();
+            if (!accessToken) return { success: false, type: 'workout', error: 'No active session' };
+
+            // Template-based workout generation via personalize-workout
+            console.log("Triggering template-based workout regeneration...");
             const response = await fetch(
-              `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-workout-program`,
+              `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/personalize-workout`,
               {
                 method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                  Authorization: `Bearer ${workoutAccessToken}`,
-                },
-                body: JSON.stringify({
-                  isModification: true,
-                  weeklyActivities,
-                  modification: planModification,
-                }),
+                headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+                body: JSON.stringify({}),
               }
             );
 
             if (!response.ok) {
               const errorData = await response.json().catch(() => ({}));
-              console.error("Failed to generate workout program:", response.status, errorData);
               return { success: false, type: 'workout', error: errorData.error || `HTTP ${response.status}` };
             }
 
-            const generatedProgram = await response.json();
-            
-            // Validate the response
-            if (!generatedProgram.workouts || !Array.isArray(generatedProgram.workouts)) {
-              console.error("Invalid workout program response:", generatedProgram);
-              return { success: false, type: 'workout', error: 'Invalid workout program structure' };
-            }
-
-            // CRITICAL: Actually save the generated program to the database
-            const saved = await saveWorkoutProgram(userId, generatedProgram);
-            
-            if (!saved) {
-              return { success: false, type: 'workout', error: 'Failed to save workout program' };
-            }
-
-            // Emit event to refresh workouts on any listening pages
-            console.log("Workout program saved, emitting refresh event");
             emitPlanRefresh("workouts");
             return { success: true, type: 'workout' };
           } catch (err) {
@@ -450,7 +213,6 @@ export function useProfileUpdates() {
     setRegenerationType(null);
 
     if (allSuccessful) {
-      // Don't show toast if we have a coach message (it will be shown in chat)
       if (!coachMessage) {
         toast.success("Your plan has been updated!", {
           description: "Check the Meals or Workouts tab to see your new plan.",
