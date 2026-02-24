@@ -152,6 +152,189 @@ export type Database = {
         }
         Relationships: []
       }
+      daily_plan_meals: {
+        Row: {
+          created_at: string | null
+          daily_plan_id: string
+          id: string
+          meal_template_id: string
+          meal_type: string
+          notes: string | null
+          scheduled_time: string | null
+          sort_order: number | null
+        }
+        Insert: {
+          created_at?: string | null
+          daily_plan_id: string
+          id?: string
+          meal_template_id: string
+          meal_type: string
+          notes?: string | null
+          scheduled_time?: string | null
+          sort_order?: number | null
+        }
+        Update: {
+          created_at?: string | null
+          daily_plan_id?: string
+          id?: string
+          meal_template_id?: string
+          meal_type?: string
+          notes?: string | null
+          scheduled_time?: string | null
+          sort_order?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_plan_meals_daily_plan_id_fkey"
+            columns: ["daily_plan_id"]
+            isOneToOne: false
+            referencedRelation: "daily_plans"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "daily_plan_meals_meal_template_id_fkey"
+            columns: ["meal_template_id"]
+            isOneToOne: false
+            referencedRelation: "meal_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      daily_plan_supplements: {
+        Row: {
+          created_at: string | null
+          daily_plan_id: string
+          dosage: number | null
+          id: string
+          notes: string | null
+          scheduled_time: string | null
+          sort_order: number | null
+          supplement_template_id: string
+          timing: string
+          unit: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          daily_plan_id: string
+          dosage?: number | null
+          id?: string
+          notes?: string | null
+          scheduled_time?: string | null
+          sort_order?: number | null
+          supplement_template_id: string
+          timing?: string
+          unit?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          daily_plan_id?: string
+          dosage?: number | null
+          id?: string
+          notes?: string | null
+          scheduled_time?: string | null
+          sort_order?: number | null
+          supplement_template_id?: string
+          timing?: string
+          unit?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_plan_supplements_daily_plan_id_fkey"
+            columns: ["daily_plan_id"]
+            isOneToOne: false
+            referencedRelation: "daily_plans"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "daily_plan_supplements_supplement_template_id_fkey"
+            columns: ["supplement_template_id"]
+            isOneToOne: false
+            referencedRelation: "supplement_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      daily_plan_workouts: {
+        Row: {
+          created_at: string | null
+          daily_plan_id: string
+          id: string
+          notes: string | null
+          scheduled_time: string | null
+          sort_order: number | null
+          workout_template_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          daily_plan_id: string
+          id?: string
+          notes?: string | null
+          scheduled_time?: string | null
+          sort_order?: number | null
+          workout_template_id: string
+        }
+        Update: {
+          created_at?: string | null
+          daily_plan_id?: string
+          id?: string
+          notes?: string | null
+          scheduled_time?: string | null
+          sort_order?: number | null
+          workout_template_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_plan_workouts_daily_plan_id_fkey"
+            columns: ["daily_plan_id"]
+            isOneToOne: false
+            referencedRelation: "daily_plans"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "daily_plan_workouts_workout_template_id_fkey"
+            columns: ["workout_template_id"]
+            isOneToOne: false
+            referencedRelation: "workout_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      daily_plans: {
+        Row: {
+          created_at: string | null
+          date_assigned: string | null
+          day_number: number
+          description: string | null
+          id: string
+          is_active: boolean | null
+          name: string | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          date_assigned?: string | null
+          day_number?: number
+          description?: string | null
+          id?: string
+          is_active?: boolean | null
+          name?: string | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          date_assigned?: string | null
+          day_number?: number
+          description?: string | null
+          id?: string
+          is_active?: boolean | null
+          name?: string | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       deviation_events: {
         Row: {
           auto_adjusted: boolean | null
@@ -497,6 +680,60 @@ export type Database = {
           },
         ]
       }
+      supplement_templates: {
+        Row: {
+          brand: string | null
+          created_at: string | null
+          description: string | null
+          id: string
+          name: string
+          notes: string | null
+          per_serving_calories: number | null
+          per_serving_carbs: number | null
+          per_serving_fats: number | null
+          per_serving_protein: number | null
+          serving_size: number | null
+          tags: string[] | null
+          type: string
+          unit: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          brand?: string | null
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          name: string
+          notes?: string | null
+          per_serving_calories?: number | null
+          per_serving_carbs?: number | null
+          per_serving_fats?: number | null
+          per_serving_protein?: number | null
+          serving_size?: number | null
+          tags?: string[] | null
+          type: string
+          unit?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          brand?: string | null
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          name?: string
+          notes?: string | null
+          per_serving_calories?: number | null
+          per_serving_carbs?: number | null
+          per_serving_fats?: number | null
+          per_serving_protein?: number | null
+          serving_size?: number | null
+          tags?: string[] | null
+          type?: string
+          unit?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       user_daily_meals: {
         Row: {
           created_at: string | null
@@ -635,6 +872,47 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      user_supplement_logs: {
+        Row: {
+          created_at: string | null
+          dosage: number | null
+          id: string
+          notes: string | null
+          supplement_template_id: string | null
+          taken_at: string
+          unit: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          dosage?: number | null
+          id?: string
+          notes?: string | null
+          supplement_template_id?: string | null
+          taken_at?: string
+          unit?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          dosage?: number | null
+          id?: string
+          notes?: string | null
+          supplement_template_id?: string | null
+          taken_at?: string
+          unit?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_supplement_logs_supplement_template_id_fkey"
+            columns: ["supplement_template_id"]
+            isOneToOne: false
+            referencedRelation: "supplement_templates"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       user_workouts: {
         Row: {
