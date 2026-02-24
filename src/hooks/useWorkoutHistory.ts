@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
-import { format } from "date-fns";
+import type { Json } from "@/integrations/supabase/types";
 
 interface CompletedExercise {
   id: string;
@@ -30,54 +30,41 @@ export function useWorkoutHistory() {
 
     setIsLoading(true);
     try {
-      // Get all workout programs for the user
-      const { data: programs } = await supabase
-        .from("workout_programs")
-        .select("id")
-        .eq("user_id", user.id);
-
-      if (!programs || programs.length === 0) {
-        setCompletedWorkouts([]);
-        return;
-      }
-
-      const programIds = programs.map(p => p.id);
-
-      // Get all completed workouts
       const { data: workouts } = await supabase
-        .from("workouts")
+        .from("user_workouts")
         .select("*")
-        .in("program_id", programIds)
+        .eq("user_id", user.id)
         .eq("is_completed", true)
         .not("completed_at", "is", null)
-        .order("completed_at", { ascending: false });
+        .order("completed_at", { ascending: false })
+        .limit(50);
 
       if (!workouts || workouts.length === 0) {
         setCompletedWorkouts([]);
         return;
       }
 
-      // Fetch exercises for each completed workout
-      const workoutsWithExercises = await Promise.all(
-        workouts.map(async (workout) => {
-          const { data: exercises } = await supabase
-            .from("exercises")
-            .select("id, name, sets, reps, weight")
-            .eq("workout_id", workout.id)
-            .order("order_index");
+      const mapped: CompletedWorkout[] = workouts.map((w) => {
+        const data = w.personalized_data as Record<string, any> | null;
+        const exercises: CompletedExercise[] = (data?.exercises || []).map((e: any, i: number) => ({
+          id: `${w.id}-${i}`,
+          name: e.name || "Unknown",
+          sets: e.sets || 0,
+          reps: e.reps || "",
+          weight: e.weight,
+        }));
 
-          return {
-            id: workout.id,
-            name: workout.name,
-            workout_type: workout.workout_type,
-            duration_minutes: workout.duration_minutes,
-            completed_at: workout.completed_at,
-            exercises: exercises || [],
-          };
-        })
-      );
+        return {
+          id: w.id,
+          name: data?.name || "Workout",
+          workout_type: data?.workout_type || "strength",
+          duration_minutes: data?.duration_minutes || 0,
+          completed_at: w.completed_at!,
+          exercises,
+        };
+      });
 
-      setCompletedWorkouts(workoutsWithExercises);
+      setCompletedWorkouts(mapped);
     } catch (error) {
       console.error("Error fetching workout history:", error);
     } finally {
