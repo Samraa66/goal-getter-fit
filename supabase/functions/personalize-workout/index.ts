@@ -49,7 +49,7 @@ serve(async (req) => {
       });
     }
 
-    const { templates, workoutsPerWeek } = await req.json();
+    const { templates, workoutsPerWeek, preferredSplit, otherSports } = await req.json();
     if (!templates || !Array.isArray(templates) || templates.length === 0) {
       throw new Error("No templates provided");
     }
@@ -65,43 +65,60 @@ serve(async (req) => {
     const fitnessGoal = profile?.fitness_goal || "general_health";
     const gender = profile?.gender || "not_specified";
     const weight = profile?.weight_current || 70;
+    const split = preferredSplit || profile?.preferred_split || "full_body";
 
-    // Select templates for the week
+    // Smart template selection: group by muscle_group_focus, build balanced week
     const count = Math.min(workoutsPerWeek || 3, templates.length);
-    const shuffled = [...templates].sort(() => Math.random() - 0.5);
-    const selected = shuffled.slice(0, count);
+    const selected = buildBalancedSelection(templates, count, split);
 
     const templateDataForAI = selected.map((t: any, i: number) => ({
       template_id: t.id,
       day_index: i,
       data: t.data,
+      training_stress: t.training_stress || "moderate",
+      total_sets: t.total_sets || 0,
+      muscle_group_focus: t.muscle_group_focus || "full_body",
+      is_active_recovery: t.is_active_recovery || false,
     }));
 
-    const systemPrompt = `You are an elite strength coach. You will receive structured workout template JSON objects.
+    const sportsContext = otherSports && otherSports.length > 0
+      ? `\n- Other sports/activities: ${otherSports.join(", ")} (reduce overlap with these muscle groups)`
+      : "";
 
-YOUR TASK: Modify sets, reps, and rest_seconds to match the user's experience level and goals.
+    const systemPrompt = `You are an elite strength coach. You will receive structured workout template JSON objects with metadata.
+
+YOUR TASK: Modify sets, reps, and rest_seconds to match the user's experience level, goals, and weekly training stress.
 
 USER PROFILE:
 - Experience: ${experienceLevel}
 - Goal: ${fitnessGoal.replace(/_/g, " ")}
 - Gender: ${gender}
 - Weight: ${weight} kg
+- Training split: ${split}
+- Workouts per week: ${count}${sportsContext}
+
+TEMPLATE METADATA (use for context, do NOT include in output):
+- training_stress: indicates how demanding the session is (low/moderate/high)
+- total_sets: total volume for the session
+- muscle_group_focus: which body region is targeted
 
 RULES:
-1. ONLY modify "sets", "reps", "rest_seconds" values
-2. DO NOT add new exercises unless explicitly needed for safety
+1. ONLY modify "sets", "reps", "rest_seconds" values in exercises
+2. DO NOT add or remove exercises
 3. DO NOT rename JSON keys
 4. DO NOT remove the structure
-5. Adjust volume: beginner (lower), intermediate (moderate), advanced (higher)
-6. Keep exercises in the same order
-7. Return ONLY valid JSON array, no markdown
+5. Keep exercises in the same order
+6. Return ONLY valid JSON array, no markdown
 
 ADJUSTMENT GUIDELINES:
 - Beginner: 2-3 sets, 10-15 reps, 90-120s rest
-- Intermediate: 3-4 sets, 8-12 reps, 60-90s rest
+- Intermediate: 3-4 sets, 8-12 reps, 60-90s rest  
 - Advanced: 4-5 sets, 6-10 reps, 60-90s rest
-- Fat loss: higher reps, shorter rest
-- Muscle gain: moderate reps, longer rest
+- Fat loss: higher reps (12-15), shorter rest (30-45s)
+- Muscle gain: moderate reps (8-12), longer rest (60-90s)
+- If training_stress is "high", keep volume but ensure adequate rest
+- If is_active_recovery is true, keep sets/reps LOW (2-3 sets, light)
+- For back-to-back high-stress days, slightly reduce volume on the second day
 
 INPUT:
 ${JSON.stringify(templateDataForAI, null, 2)}
@@ -192,3 +209,48 @@ OUTPUT FORMAT (array of objects):
     );
   }
 });
+
+/** Build a balanced selection of templates for the week based on split */
+function buildBalancedSelection(templates: any[], count: number, split: string): any[] {
+  const regular = templates.filter((t: any) => !t.is_active_recovery);
+  const recovery = templates.filter((t: any) => t.is_active_recovery);
+
+  const byFocus: Record<string, any[]> = {};
+  for (const t of regular) {
+    const focus = t.muscle_group_focus || "full_body";
+    if (!byFocus[focus]) byFocus[focus] = [];
+    byFocus[focus].push(t);
+  }
+
+  const selected: any[] = [];
+  const rotations: Record<string, string[]> = {
+    ppl: ["push", "pull", "lower"],
+    upper_lower: ["upper", "lower"],
+    bro_split: ["push", "pull", "push", "legs"],
+    full_body: ["full_body"],
+  };
+
+  const rotation = rotations[split] || rotations["full_body"];
+
+  for (let i = 0; i < count && i < 6; i++) {
+    const focus = rotation[i % rotation.length];
+    const pool = byFocus[focus] || regular;
+    if (pool.length > 0) {
+      const unused = pool.filter((t: any) => !selected.includes(t));
+      const source = unused.length > 0 ? unused : pool;
+      selected.push(source[Math.floor(Math.random() * source.length)]);
+    }
+  }
+
+  // Pad if needed
+  if (selected.length < count) {
+    const remaining = regular.filter((t: any) => !selected.includes(t));
+    const shuffled = [...remaining].sort(() => Math.random() - 0.5);
+    for (const t of shuffled) {
+      if (selected.length >= count) break;
+      selected.push(t);
+    }
+  }
+
+  return selected.slice(0, count);
+}
