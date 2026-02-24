@@ -16,12 +16,10 @@ export function useTemplateWorkouts() {
 
   const isPremium = tier === "paid";
 
-  // Fetch current week's user workouts
   const fetchWorkouts = useCallback(async () => {
     if (!user) return;
     setIsLoading(true);
     try {
-      // Get workouts for current week (last 7 days to next 7 days)
       const { data, error } = await supabase
         .from("user_workouts")
         .select("*")
@@ -37,26 +35,32 @@ export function useTemplateWorkouts() {
     }
   }, [user]);
 
-  // Generate workout program from templates
   const generateProgram = useCallback(async () => {
     if (!user) return;
     setIsGenerating(true);
     try {
       const { data: profile } = await supabase
         .from("profiles")
-        .select("fitness_goal, experience_level, workout_location, workouts_per_week")
+        .select("fitness_goal, experience_level, workout_location, workouts_per_week, preferred_split, other_sports")
         .eq("id", user.id)
         .single();
 
       const goalType = mapGoalToTemplateType(profile?.fitness_goal);
       const difficulty = profile?.experience_level || "beginner";
       const workoutsPerWeek = profile?.workouts_per_week || 3;
+      const preferredSplit = profile?.preferred_split || inferSplit(workoutsPerWeek);
+      const workoutLocation = profile?.workout_location || "gym";
+      const otherSports = profile?.other_sports || [];
 
-      // Fetch matching workout templates
+      // Map location to equipment type
+      const equipmentType = mapLocationToEquipment(workoutLocation);
+
+      // Fetch templates matching goal, difficulty, and split
       let query = supabase
         .from("workout_templates")
         .select("*")
-        .eq("goal_type", goalType);
+        .eq("goal_type", goalType)
+        .eq("training_split", preferredSplit);
 
       if (difficulty) {
         query = query.eq("difficulty", difficulty);
@@ -65,7 +69,18 @@ export function useTemplateWorkouts() {
       const { data: templates, error: tErr } = await query;
 
       if (tErr) throw tErr;
-      if (!templates || templates.length === 0) {
+
+      // Fallback: if no templates match the split, try without split filter
+      let finalTemplates = templates;
+      if (!finalTemplates || finalTemplates.length === 0) {
+        const { data: fallback } = await supabase
+          .from("workout_templates")
+          .select("*")
+          .eq("goal_type", goalType);
+        finalTemplates = fallback;
+      }
+
+      if (!finalTemplates || finalTemplates.length === 0) {
         toast.error("No workout templates available yet. Check back soon!");
         return;
       }
@@ -89,7 +104,12 @@ export function useTemplateWorkouts() {
               "Content-Type": "application/json",
               Authorization: `Bearer ${session.access_token}`,
             },
-            body: JSON.stringify({ templates, workoutsPerWeek }),
+            body: JSON.stringify({
+              templates: finalTemplates,
+              workoutsPerWeek,
+              preferredSplit,
+              otherSports,
+            }),
           }
         );
 
@@ -100,22 +120,16 @@ export function useTemplateWorkouts() {
 
         await fetchWorkouts();
       } else {
-        // Free: use templates directly
-        const selected = selectWorkoutsForWeek(
-          templates as unknown as WorkoutTemplate[],
-          workoutsPerWeek
+        // Free: smart template selection
+        const selected = buildWeeklyProgram(
+          finalTemplates as unknown as WorkoutTemplate[],
+          workoutsPerWeek,
+          preferredSplit,
+          otherSports
         );
 
         const today = format(new Date(), "yyyy-MM-dd");
-        const dayMappings: Record<number, number[]> = {
-          1: [1],
-          2: [1, 4],
-          3: [1, 3, 5],
-          4: [1, 2, 4, 5],
-          5: [1, 2, 3, 5, 6],
-          6: [1, 2, 3, 4, 5, 6],
-        };
-        const days = dayMappings[selected.length] || dayMappings[3];
+        const days = assignWorkoutDays(selected.length, workoutsPerWeek);
 
         const inserts = selected.map((t, i) => ({
           user_id: user.id,
@@ -142,7 +156,6 @@ export function useTemplateWorkouts() {
     }
   }, [user, isPremium, fetchWorkouts]);
 
-  // Complete a workout
   const completeWorkout = async (workoutId: string) => {
     try {
       const { error } = await supabase
@@ -181,7 +194,8 @@ export function useTemplateWorkouts() {
   };
 }
 
-// Map profile fitness_goal values to template goal_type values
+// ─── Helper Functions ────────────────────────────────────────
+
 function mapGoalToTemplateType(fitnessGoal: string | null | undefined): string {
   const mapping: Record<string, string> = {
     gain_muscle: "muscle_gain",
@@ -196,11 +210,122 @@ function mapGoalToTemplateType(fitnessGoal: string | null | undefined): string {
   return mapping[fitnessGoal || ""] || "general_health";
 }
 
-function selectWorkoutsForWeek(
+/** Infer a training split from workouts per week if user hasn't set one */
+function inferSplit(workoutsPerWeek: number): string {
+  if (workoutsPerWeek <= 3) return "full_body";
+  if (workoutsPerWeek <= 4) return "upper_lower";
+  if (workoutsPerWeek <= 5) return "ppl";
+  return "bro_split";
+}
+
+function mapLocationToEquipment(location: string): string {
+  const map: Record<string, string> = {
+    gym: "full_gym",
+    home: "minimal",
+    outdoor: "bodyweight",
+  };
+  return map[location] || "full_gym";
+}
+
+/** Build a balanced weekly program based on the training split */
+function buildWeeklyProgram(
   templates: WorkoutTemplate[],
-  count: number
+  count: number,
+  split: string,
+  otherSports: string[]
 ): WorkoutTemplate[] {
-  // Shuffle and pick up to `count` templates
-  const shuffled = [...templates].sort(() => Math.random() - 0.5);
-  return shuffled.slice(0, Math.min(count, shuffled.length));
+  // Separate regular workouts from active recovery
+  const regular = templates.filter((t) => !(t as any).is_active_recovery);
+  const recovery = templates.filter((t) => (t as any).is_active_recovery);
+
+  // Group regular templates by muscle_group_focus
+  const byFocus: Record<string, WorkoutTemplate[]> = {};
+  for (const t of regular) {
+    const focus = (t as any).muscle_group_focus || "full_body";
+    if (!byFocus[focus]) byFocus[focus] = [];
+    byFocus[focus].push(t);
+  }
+
+  const selected: WorkoutTemplate[] = [];
+
+  // Build based on split type
+  switch (split) {
+    case "ppl": {
+      // Push, Pull, Legs rotation
+      const rotation = ["push", "pull", "lower"];
+      for (let i = 0; i < count && i < 6; i++) {
+        const focus = rotation[i % rotation.length];
+        const pool = byFocus[focus] || [];
+        if (pool.length > 0) {
+          selected.push(pickRandom(pool, selected));
+        }
+      }
+      break;
+    }
+    case "upper_lower": {
+      const rotation = ["upper", "lower"];
+      for (let i = 0; i < count && i < 6; i++) {
+        const focus = rotation[i % rotation.length];
+        const pool = byFocus[focus] || [];
+        if (pool.length > 0) {
+          selected.push(pickRandom(pool, selected));
+        }
+      }
+      break;
+    }
+    case "bro_split": {
+      // Chest, Back, Shoulders, Legs, Arms
+      const rotation = ["push", "pull", "push", "legs"];
+      for (let i = 0; i < count && i < 6; i++) {
+        const focus = rotation[i % rotation.length];
+        const pool = byFocus[focus] || [];
+        if (pool.length > 0) {
+          selected.push(pickRandom(pool, selected));
+        }
+      }
+      break;
+    }
+    case "full_body":
+    default: {
+      const pool = byFocus["full_body"] || regular;
+      for (let i = 0; i < count; i++) {
+        if (pool.length > 0) {
+          selected.push(pickRandom(pool, selected));
+        }
+      }
+      break;
+    }
+  }
+
+  // If we couldn't fill enough slots, pad with any remaining templates
+  if (selected.length < count) {
+    const remaining = regular.filter((t) => !selected.includes(t));
+    const shuffled = [...remaining].sort(() => Math.random() - 0.5);
+    for (const t of shuffled) {
+      if (selected.length >= count) break;
+      selected.push(t);
+    }
+  }
+
+  return selected.slice(0, count);
+}
+
+/** Pick a random template from pool, preferring ones not already selected */
+function pickRandom(pool: WorkoutTemplate[], alreadySelected: WorkoutTemplate[]): WorkoutTemplate {
+  const unused = pool.filter((t) => !alreadySelected.includes(t));
+  const source = unused.length > 0 ? unused : pool;
+  return source[Math.floor(Math.random() * source.length)];
+}
+
+/** Assign day-of-week numbers ensuring rest between high-stress days */
+function assignWorkoutDays(count: number, _workoutsPerWeek: number): number[] {
+  const dayMappings: Record<number, number[]> = {
+    1: [1],
+    2: [1, 4],
+    3: [1, 3, 5],
+    4: [1, 2, 4, 5],
+    5: [1, 2, 3, 5, 6],
+    6: [1, 2, 3, 4, 5, 6],
+  };
+  return dayMappings[count] || dayMappings[3];
 }

@@ -1079,20 +1079,17 @@ export type Database = {
           difficulty: string | null
           duration_minutes: number | null
           equipment_type: string | null
-          estimated_calories_burned: number | null
           estimated_warmup_minutes: number | null
           goal_type: string | null
           id: string
-          intensity_level: string | null
           is_active_recovery: boolean | null
           muscle_group_focus: string | null
           name: string
-          recovery_demand: string | null
           sport_conflict_groups: string[] | null
           tags: string[] | null
           total_sets: number | null
           training_split: string | null
-          workout_location: string | null
+          training_stress: string | null
         }
         Insert: {
           created_at?: string | null
@@ -1100,20 +1097,17 @@ export type Database = {
           difficulty?: string | null
           duration_minutes?: number | null
           equipment_type?: string | null
-          estimated_calories_burned?: number | null
           estimated_warmup_minutes?: number | null
           goal_type?: string | null
           id?: string
-          intensity_level?: string | null
           is_active_recovery?: boolean | null
           muscle_group_focus?: string | null
           name: string
-          recovery_demand?: string | null
           sport_conflict_groups?: string[] | null
           tags?: string[] | null
           total_sets?: number | null
           training_split?: string | null
-          workout_location?: string | null
+          training_stress?: string | null
         }
         Update: {
           created_at?: string | null
@@ -1121,20 +1115,17 @@ export type Database = {
           difficulty?: string | null
           duration_minutes?: number | null
           equipment_type?: string | null
-          estimated_calories_burned?: number | null
           estimated_warmup_minutes?: number | null
           goal_type?: string | null
           id?: string
-          intensity_level?: string | null
           is_active_recovery?: boolean | null
           muscle_group_focus?: string | null
           name?: string
-          recovery_demand?: string | null
           sport_conflict_groups?: string[] | null
           tags?: string[] | null
           total_sets?: number | null
           training_split?: string | null
-          workout_location?: string | null
+          training_stress?: string | null
         }
         Relationships: []
       }
