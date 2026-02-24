@@ -88,24 +88,45 @@ function mapGoalToTemplateType(fitnessGoal: string | null): string {
 }
 
 // ─── Calorie Distribution ───────────────────────────────────────────
-function getSlotDistribution(mealsPerDay: number): Record<string, number> {
+function getSlotDistribution(mealsPerDay: number, hasSupplements: boolean): Record<string, number> {
+  const suppPct = hasSupplements ? 0.05 : 0;
+  const remaining = 1 - suppPct;
+  
+  let base: Record<string, number>;
   switch (mealsPerDay) {
-    case 2: return { lunch: 0.45, dinner: 0.55 };
-    case 3: return { breakfast: 0.25, lunch: 0.35, dinner: 0.40 };
-    case 4: return { breakfast: 0.20, lunch: 0.30, dinner: 0.35, snack: 0.15 };
-    case 5: return { breakfast: 0.20, lunch: 0.25, snack: 0.10, dinner: 0.30, snack_2: 0.15 };
-    default: return { breakfast: 0.25, lunch: 0.35, dinner: 0.40 };
+    case 2: base = { lunch: 0.45, dinner: 0.55 }; break;
+    case 3: base = { breakfast: 0.25, lunch: 0.35, dinner: 0.40 }; break;
+    case 4: base = { breakfast: 0.20, lunch: 0.30, dinner: 0.35, snack: 0.15 }; break;
+    case 5: base = { breakfast: 0.20, lunch: 0.25, snack: 0.10, dinner: 0.30, snack_2: 0.15 }; break;
+    case 6: base = { breakfast: 0.18, snack: 0.10, lunch: 0.25, snack_2: 0.10, dinner: 0.27, snack_3: 0.10 }; break;
+    default: base = { breakfast: 0.25, lunch: 0.35, dinner: 0.40 }; break;
   }
+
+  // Scale base proportions to fit within remaining budget after supplements
+  const scaled: Record<string, number> = {};
+  for (const [k, v] of Object.entries(base)) {
+    scaled[k] = Math.round(v * remaining * 100) / 100;
+  }
+  if (hasSupplements) {
+    scaled["supplement"] = suppPct;
+  }
+  return scaled;
 }
 
-function getMealSlots(mealsPerDay: number): string[] {
+function getMealSlots(mealsPerDay: number, hasSupplements: boolean): string[] {
+  let slots: string[];
   switch (mealsPerDay) {
-    case 2: return ["lunch", "dinner"];
-    case 3: return ["breakfast", "lunch", "dinner"];
-    case 4: return ["breakfast", "lunch", "dinner", "snack"];
-    case 5: return ["breakfast", "lunch", "snack", "dinner", "snack_2"];
-    default: return ["breakfast", "lunch", "dinner"];
+    case 2: slots = ["lunch", "dinner"]; break;
+    case 3: slots = ["breakfast", "lunch", "dinner"]; break;
+    case 4: slots = ["breakfast", "lunch", "dinner", "snack"]; break;
+    case 5: slots = ["breakfast", "lunch", "snack", "dinner", "snack_2"]; break;
+    case 6: slots = ["breakfast", "snack", "lunch", "snack_2", "dinner", "snack_3"]; break;
+    default: slots = ["breakfast", "lunch", "dinner"]; break;
   }
+  if (hasSupplements) {
+    slots.push("supplement");
+  }
+  return slots;
 }
 
 serve(async (req) => {
@@ -163,8 +184,17 @@ serve(async (req) => {
     const goalType = mapGoalToTemplateType(profile?.fitness_goal);
     const mealsPerDay = profile?.meals_per_day || 3;
     const cookingStyle = profile?.cooking_style_preference || "cook_daily";
-    const SLOT_DISTRIBUTION = getSlotDistribution(mealsPerDay);
-    const MEAL_SLOTS = getMealSlots(mealsPerDay);
+
+    // Check if supplement templates exist for this goal
+    const { count: supplementCount } = await supabase
+      .from("meal_templates")
+      .select("*", { count: "exact", head: true })
+      .eq("goal_type", goalType)
+      .eq("meal_type", "supplement");
+
+    const hasSupplements = (supplementCount || 0) > 0;
+    const SLOT_DISTRIBUTION = getSlotDistribution(mealsPerDay, hasSupplements);
+    const MEAL_SLOTS = getMealSlots(mealsPerDay, hasSupplements);
 
     // ─── STEP 2: Fetch all matching templates ───────────────────────
     const { data: allTemplates, error: tErr } = await supabase
@@ -228,8 +258,8 @@ serve(async (req) => {
 
     for (const dateStr of dates) {
       for (const slot of MEAL_SLOTS) {
-        // Map snack_2 to snack for template lookup
-        const templateSlot = slot === "snack_2" ? "snack" : slot;
+        // Map snack variants to snack for template lookup (supplement stays as-is)
+        const templateSlot = slot.startsWith("snack") ? "snack" : slot;
         const slotCalories = Math.round(dailyCalories * (SLOT_DISTRIBUTION[slot] || 0.33));
 
         // Check if we have an active meal with remaining servings for this slot

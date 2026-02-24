@@ -189,14 +189,20 @@ function mapGoalToTemplateType(fitnessGoal: string | null | undefined): string {
 }
 
 // Get meal slots based on meals_per_day setting
-function getMealSlots(mealsPerDay: number): string[] {
+function getMealSlots(mealsPerDay: number, hasSupplements = false): string[] {
+  let slots: string[];
   switch (mealsPerDay) {
-    case 2: return ["lunch", "dinner"];
-    case 3: return ["breakfast", "lunch", "dinner"];
-    case 4: return ["breakfast", "lunch", "dinner", "snack"];
-    case 5: return ["breakfast", "lunch", "snack", "dinner", "snack"];
-    default: return ["breakfast", "lunch", "dinner"];
+    case 2: slots = ["lunch", "dinner"]; break;
+    case 3: slots = ["breakfast", "lunch", "dinner"]; break;
+    case 4: slots = ["breakfast", "lunch", "dinner", "snack"]; break;
+    case 5: slots = ["breakfast", "lunch", "snack", "dinner", "snack_2"]; break;
+    case 6: slots = ["breakfast", "snack", "lunch", "snack_2", "dinner", "snack_3"]; break;
+    default: slots = ["breakfast", "lunch", "dinner"]; break;
   }
+  if (hasSupplements) {
+    slots.push("supplement");
+  }
+  return slots;
 }
 
 // Pick one template per meal type
