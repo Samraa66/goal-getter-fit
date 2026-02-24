@@ -88,13 +88,25 @@ function mapGoalToTemplateType(fitnessGoal: string | null): string {
 }
 
 // ─── Calorie Distribution ───────────────────────────────────────────
-const SLOT_DISTRIBUTION: Record<string, number> = {
-  breakfast: 0.25,
-  lunch: 0.35,
-  dinner: 0.40,
-};
+function getSlotDistribution(mealsPerDay: number): Record<string, number> {
+  switch (mealsPerDay) {
+    case 2: return { lunch: 0.45, dinner: 0.55 };
+    case 3: return { breakfast: 0.25, lunch: 0.35, dinner: 0.40 };
+    case 4: return { breakfast: 0.20, lunch: 0.30, dinner: 0.35, snack: 0.15 };
+    case 5: return { breakfast: 0.20, lunch: 0.25, snack: 0.10, dinner: 0.30, snack_2: 0.15 };
+    default: return { breakfast: 0.25, lunch: 0.35, dinner: 0.40 };
+  }
+}
 
-const MEAL_SLOTS = ["breakfast", "lunch", "dinner"];
+function getMealSlots(mealsPerDay: number): string[] {
+  switch (mealsPerDay) {
+    case 2: return ["lunch", "dinner"];
+    case 3: return ["breakfast", "lunch", "dinner"];
+    case 4: return ["breakfast", "lunch", "dinner", "snack"];
+    case 5: return ["breakfast", "lunch", "snack", "dinner", "snack_2"];
+    default: return ["breakfast", "lunch", "dinner"];
+  }
+}
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -149,6 +161,10 @@ serve(async (req) => {
 
     const dailyCalories = profile?.daily_calorie_target || calculateTDEE(profile || {});
     const goalType = mapGoalToTemplateType(profile?.fitness_goal);
+    const mealsPerDay = profile?.meals_per_day || 3;
+    const cookingStyle = profile?.cooking_style_preference || "cook_daily";
+    const SLOT_DISTRIBUTION = getSlotDistribution(mealsPerDay);
+    const MEAL_SLOTS = getMealSlots(mealsPerDay);
 
     // ─── STEP 2: Fetch all matching templates ───────────────────────
     const { data: allTemplates, error: tErr } = await supabase
@@ -208,13 +224,16 @@ serve(async (req) => {
       usedTemplateIds[slot] = new Set();
     }
 
+    const isBatchMode = cookingStyle === "batch_cook_weekly";
+
     for (const dateStr of dates) {
       for (const slot of MEAL_SLOTS) {
+        // Map snack_2 to snack for template lookup
+        const templateSlot = slot === "snack_2" ? "snack" : slot;
         const slotCalories = Math.round(dailyCalories * (SLOT_DISTRIBUTION[slot] || 0.33));
 
         // Check if we have an active meal with remaining servings for this slot
         if (activeUserMeals[slot] && activeUserMeals[slot].remaining > 0) {
-          // Use existing meal
           dailyMealInserts.push({
             user_id: user.id,
             date: dateStr,
@@ -227,8 +246,17 @@ serve(async (req) => {
         }
 
         // Need a new template for this slot
-        const slotTemplates = templatesByType[slot] || templatesByType["lunch"] || [];
+        let slotTemplates = templatesByType[templateSlot] || templatesByType["lunch"] || [];
         if (slotTemplates.length === 0) continue;
+
+        // For batch mode, prefer batch_friendly templates (at least 50% should be batch)
+        if (isBatchMode) {
+          const batchTemplates = slotTemplates.filter((t: any) => t.batch_friendly);
+          if (batchTemplates.length > 0) {
+            // Use batch templates preferentially
+            slotTemplates = batchTemplates;
+          }
+        }
 
         // Select template avoiding recent repeats
         let selectedTemplate = null;
@@ -236,7 +264,6 @@ serve(async (req) => {
         if (unused.length > 0) {
           selectedTemplate = unused[Math.floor(Math.random() * unused.length)];
         } else {
-          // All used, reset tracking and pick randomly
           usedTemplateIds[slot].clear();
           selectedTemplate = slotTemplates[Math.floor(Math.random() * slotTemplates.length)];
         }
@@ -245,10 +272,17 @@ serve(async (req) => {
         // Scale macros to match slot calorie target
         const scaledData = scaleTemplate(selectedTemplate, slotCalories);
         const ratio = slotCalories / (selectedTemplate.per_serving_calories || 500);
-        const servings = selectedTemplate.servings || 1;
 
-        // Generate a unique ID for the user_meal
+        // Determine servings based on cooking style
+        let servings: number;
+        if (isBatchMode) {
+          servings = selectedTemplate.default_servings || selectedTemplate.servings || 3;
+        } else {
+          servings = 1; // cook_daily always single serving
+        }
+
         const userMealId = crypto.randomUUID();
+        const daysCovered = isBatchMode ? Math.min(servings, 7) : 1;
 
         userMealInserts.push({
           id: userMealId,
@@ -256,13 +290,16 @@ serve(async (req) => {
           base_template_id: selectedTemplate.id,
           personalized_data: scaledData,
           date_assigned: dateStr,
-          meal_type: slot,
+          meal_type: templateSlot,
           total_servings: servings,
-          remaining_servings: servings - 1, // one serving used today
+          remaining_servings: servings - 1,
           total_calories: slotCalories,
           total_protein: Math.round((selectedTemplate.per_serving_protein || 0) * ratio * 10) / 10,
           total_carbs: Math.round((selectedTemplate.per_serving_carbs || 0) * ratio * 10) / 10,
           total_fats: Math.round((selectedTemplate.per_serving_fats || 0) * ratio * 10) / 10,
+          preparation_type: isBatchMode ? "batch" : "single_day",
+          is_batch_meal: isBatchMode && servings > 1,
+          days_covered: daysCovered,
         });
 
         dailyMealInserts.push({

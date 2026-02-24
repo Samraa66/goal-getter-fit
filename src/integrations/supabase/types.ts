@@ -431,8 +431,10 @@ export type Database = {
       }
       meal_templates: {
         Row: {
+          batch_friendly: boolean | null
           created_at: string | null
           data: Json
+          default_servings: number | null
           difficulty: string | null
           equipment_type: string | null
           goal_type: string | null
@@ -443,6 +445,7 @@ export type Database = {
           per_serving_carbs: number | null
           per_serving_fats: number | null
           per_serving_protein: number | null
+          recommended_storage_days: number | null
           servings: number | null
           tags: string[] | null
           total_calories: number | null
@@ -451,8 +454,10 @@ export type Database = {
           total_protein: number | null
         }
         Insert: {
+          batch_friendly?: boolean | null
           created_at?: string | null
           data: Json
+          default_servings?: number | null
           difficulty?: string | null
           equipment_type?: string | null
           goal_type?: string | null
@@ -463,6 +468,7 @@ export type Database = {
           per_serving_carbs?: number | null
           per_serving_fats?: number | null
           per_serving_protein?: number | null
+          recommended_storage_days?: number | null
           servings?: number | null
           tags?: string[] | null
           total_calories?: number | null
@@ -471,8 +477,10 @@ export type Database = {
           total_protein?: number | null
         }
         Update: {
+          batch_friendly?: boolean | null
           created_at?: string | null
           data?: Json
+          default_servings?: number | null
           difficulty?: string | null
           equipment_type?: string | null
           goal_type?: string | null
@@ -483,6 +491,7 @@ export type Database = {
           per_serving_carbs?: number | null
           per_serving_fats?: number | null
           per_serving_protein?: number | null
+          recommended_storage_days?: number | null
           servings?: number | null
           tags?: string[] | null
           total_calories?: number | null
@@ -590,6 +599,7 @@ export type Database = {
           age: number | null
           allergies: string[] | null
           avatar_url: string | null
+          cooking_style_preference: string | null
           created_at: string | null
           daily_calorie_target: number | null
           daily_food_budget: number | null
@@ -602,6 +612,7 @@ export type Database = {
           gender: string | null
           height_cm: number | null
           id: string
+          meals_per_day: number | null
           onboarding_completed: boolean | null
           other_sports: string[] | null
           preferred_split: string | null
@@ -616,6 +627,7 @@ export type Database = {
           age?: number | null
           allergies?: string[] | null
           avatar_url?: string | null
+          cooking_style_preference?: string | null
           created_at?: string | null
           daily_calorie_target?: number | null
           daily_food_budget?: number | null
@@ -628,6 +640,7 @@ export type Database = {
           gender?: string | null
           height_cm?: number | null
           id: string
+          meals_per_day?: number | null
           onboarding_completed?: boolean | null
           other_sports?: string[] | null
           preferred_split?: string | null
@@ -642,6 +655,7 @@ export type Database = {
           age?: number | null
           allergies?: string[] | null
           avatar_url?: string | null
+          cooking_style_preference?: string | null
           created_at?: string | null
           daily_calorie_target?: number | null
           daily_food_budget?: number | null
@@ -654,6 +668,7 @@ export type Database = {
           gender?: string | null
           height_cm?: number | null
           id?: string
+          meals_per_day?: number | null
           onboarding_completed?: boolean | null
           other_sports?: string[] | null
           preferred_split?: string | null
@@ -847,10 +862,13 @@ export type Database = {
           base_template_id: string | null
           created_at: string | null
           date_assigned: string
+          days_covered: number | null
           id: string
+          is_batch_meal: boolean | null
           is_completed: boolean | null
           meal_type: string
           personalized_data: Json
+          preparation_type: string | null
           remaining_servings: number | null
           total_calories: number | null
           total_carbs: number | null
@@ -863,10 +881,13 @@ export type Database = {
           base_template_id?: string | null
           created_at?: string | null
           date_assigned: string
+          days_covered?: number | null
           id?: string
+          is_batch_meal?: boolean | null
           is_completed?: boolean | null
           meal_type: string
           personalized_data: Json
+          preparation_type?: string | null
           remaining_servings?: number | null
           total_calories?: number | null
           total_carbs?: number | null
@@ -879,10 +900,13 @@ export type Database = {
           base_template_id?: string | null
           created_at?: string | null
           date_assigned?: string
+          days_covered?: number | null
           id?: string
+          is_batch_meal?: boolean | null
           is_completed?: boolean | null
           meal_type?: string
           personalized_data?: Json
+          preparation_type?: string | null
           remaining_servings?: number | null
           total_calories?: number | null
           total_carbs?: number | null

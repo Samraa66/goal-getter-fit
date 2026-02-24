@@ -46,11 +46,12 @@ export function useTemplateMeals(date: Date = new Date()) {
       // Fetch profile for filtering
       const { data: profile } = await supabase
         .from("profiles")
-        .select("fitness_goal, daily_calorie_target, dietary_preference, allergies, disliked_foods")
+        .select("fitness_goal, daily_calorie_target, dietary_preference, allergies, disliked_foods, meals_per_day, cooking_style_preference")
         .eq("id", user.id)
         .single();
 
       const goalType = mapGoalToTemplateType(profile?.fitness_goal);
+      const mealsPerDay = profile?.meals_per_day || 3;
 
       // Fetch matching templates
       const { data: templates, error: tErr } = await supabase
@@ -97,7 +98,7 @@ export function useTemplateMeals(date: Date = new Date()) {
         await fetchMeals();
       } else {
         // Free: use template data directly
-        const mealTypes = ["breakfast", "lunch", "dinner", "snack"];
+        const mealTypes = getMealSlots(mealsPerDay);
         const selected = selectTemplatesForDay(templates as unknown as MealTemplate[], mealTypes);
 
         const inserts = selected.map((t) => ({
@@ -187,13 +188,24 @@ function mapGoalToTemplateType(fitnessGoal: string | null | undefined): string {
   return mapping[fitnessGoal || ""] || "general_health";
 }
 
+// Get meal slots based on meals_per_day setting
+function getMealSlots(mealsPerDay: number): string[] {
+  switch (mealsPerDay) {
+    case 2: return ["lunch", "dinner"];
+    case 3: return ["breakfast", "lunch", "dinner"];
+    case 4: return ["breakfast", "lunch", "dinner", "snack"];
+    case 5: return ["breakfast", "lunch", "snack", "dinner", "snack"];
+    default: return ["breakfast", "lunch", "dinner"];
+  }
+}
+
 // Pick one template per meal type
 function selectTemplatesForDay(templates: MealTemplate[], mealTypes: string[]): MealTemplate[] {
   const selected: MealTemplate[] = [];
   for (const type of mealTypes) {
-    const matching = templates.filter((t) => t.meal_type === type);
+    const templateType = type === "snack_2" ? "snack" : type;
+    const matching = templates.filter((t) => t.meal_type === templateType);
     if (matching.length > 0) {
-      // Random selection for variety
       selected.push(matching[Math.floor(Math.random() * matching.length)]);
     }
   }
