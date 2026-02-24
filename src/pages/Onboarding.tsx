@@ -35,6 +35,7 @@ type WorkoutLocation = "gym" | "home" | "both";
 type DietPreference = "none" | "vegetarian" | "vegan" | "keto" | "paleo";
 type ActivityLevel = "sedentary" | "lightly_active" | "moderately_active" | "very_active";
 type Gender = "male" | "female" | "non_binary";
+type CookingStyle = "cook_daily" | "batch_cook_weekly";
 
 interface OnboardingData {
   goal: Goal | null;
@@ -53,6 +54,8 @@ interface OnboardingData {
   workoutsPerWeek: number;
   dailyCalorieTarget: number;
   dailyFoodBudget: string;
+  cookingStyle: CookingStyle | null;
+  mealsPerDay: number;
 }
 
 const goals = [
@@ -135,6 +138,8 @@ export default function Onboarding() {
     workoutsPerWeek: 3,
     dailyCalorieTarget: 2000,
     dailyFoodBudget: "",
+    cookingStyle: null,
+    mealsPerDay: 3,
   });
 
   // Check for pending onboarding data from pre-signup flow OR redirect if already onboarded
@@ -180,6 +185,8 @@ export default function Onboarding() {
               workouts_per_week: parsed.workoutsPerWeek || 3,
               daily_calorie_target: parsed.dailyCalorieTarget || 2000,
               daily_food_budget: parsed.dailyFoodBudget ? parseFloat(parsed.dailyFoodBudget) : null,
+              cooking_style_preference: parsed.cookingStyle || 'cook_daily',
+              meals_per_day: parsed.mealsPerDay || 3,
               onboarding_completed: true,
             };
 
@@ -213,7 +220,7 @@ export default function Onboarding() {
     checkOnboardingStatus();
   }, [user, navigate, toast]);
 
-  const totalSteps = 6; // Added gender step
+  const totalSteps = 7; // Added cooking style step
 
   // Show loading while applying pending data
   if (isApplyingPending) {
@@ -250,6 +257,8 @@ export default function Onboarding() {
       workouts_per_week: data.workoutsPerWeek,
       daily_calorie_target: data.dailyCalorieTarget,
       daily_food_budget: data.dailyFoodBudget ? parseFloat(data.dailyFoodBudget) : null,
+      cooking_style_preference: data.cookingStyle || 'cook_daily',
+      meals_per_day: data.mealsPerDay,
       onboarding_completed: true,
     };
 
@@ -707,8 +716,83 @@ export default function Onboarding() {
         </OnboardingStep>
       )}
 
-      {/* Step 6: Calorie Target + Review */}
+      {/* Step 6: Cooking Style & Meals Per Day */}
       {step === 5 && (
+        <OnboardingStep
+          title="How do you like to cook?"
+          description="This shapes how your meal plan is structured."
+          onNext={handleNext}
+          onBack={handleBack}
+          canProceed={!!data.cookingStyle}
+        >
+          <div className="space-y-6">
+            <div>
+              <Label className="text-foreground mb-3 block font-medium">Cooking style</Label>
+              <div className="space-y-3">
+                <button
+                  onClick={() => setData({ ...data, cookingStyle: "cook_daily" })}
+                  className={cn(
+                    "w-full flex items-center gap-4 p-4 rounded-xl border transition-all text-left",
+                    data.cookingStyle === "cook_daily"
+                      ? "border-primary bg-primary/10"
+                      : "border-border bg-card hover:border-primary/50"
+                  )}
+                >
+                  <span className="text-2xl">🍳</span>
+                  <div className="flex-1">
+                    <span className="font-semibold text-foreground block">Cook Daily</span>
+                    <span className="text-xs text-muted-foreground">Fresh meals every day, more variety</span>
+                  </div>
+                  <div className={cn(
+                    "h-5 w-5 rounded-full border-2 transition-all",
+                    data.cookingStyle === "cook_daily" ? "border-primary bg-primary" : "border-muted-foreground"
+                  )} />
+                </button>
+                <button
+                  onClick={() => setData({ ...data, cookingStyle: "batch_cook_weekly" })}
+                  className={cn(
+                    "w-full flex items-center gap-4 p-4 rounded-xl border transition-all text-left",
+                    data.cookingStyle === "batch_cook_weekly"
+                      ? "border-primary bg-primary/10"
+                      : "border-border bg-card hover:border-primary/50"
+                  )}
+                >
+                  <span className="text-2xl">🥘</span>
+                  <div className="flex-1">
+                    <span className="font-semibold text-foreground block">Batch Cook Weekly</span>
+                    <span className="text-xs text-muted-foreground">Prep once, eat for days — less time cooking</span>
+                  </div>
+                  <div className={cn(
+                    "h-5 w-5 rounded-full border-2 transition-all",
+                    data.cookingStyle === "batch_cook_weekly" ? "border-primary bg-primary" : "border-muted-foreground"
+                  )} />
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <Label className="text-foreground mb-3 block font-medium">
+                Meals per day: <span className="text-primary">{data.mealsPerDay}</span>
+              </Label>
+              <Slider
+                value={[data.mealsPerDay]}
+                onValueChange={(value) => setData({ ...data, mealsPerDay: value[0] })}
+                min={2}
+                max={5}
+                step={1}
+                className="py-4"
+              />
+              <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                <span>2 meals</span>
+                <span>5 meals</span>
+              </div>
+            </div>
+          </div>
+        </OnboardingStep>
+      )}
+
+      {/* Step 7: Calorie Target + Review */}
+      {step === 6 && (
         <OnboardingStep
           title="Your daily target"
           description="Adjust based on your preferences."
