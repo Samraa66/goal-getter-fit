@@ -92,6 +92,7 @@ CREATE POLICY "Users can delete own user_workouts"
 -- ============================================
 -- 4. Make meal_templates publicly readable
 -- ============================================
+DROP POLICY IF EXISTS "Anyone can read meal templates" ON public.meal_templates;
 CREATE POLICY "Anyone can read meal templates"
   ON public.meal_templates FOR SELECT
   USING (true);

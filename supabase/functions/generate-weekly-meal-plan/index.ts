@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { selectMealTemplate } from "../_shared/template-selection.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -172,15 +173,92 @@ serve(async (req) => {
 
     const body = await req.json().catch(() => ({}));
     const startDate = body.start_date; // yyyy-MM-dd, defaults to today
+    const idempotencyKey = body.idempotency_key as string | undefined;
+    let generationId: string | null = null;
 
-    // ─── STEP 1: Fetch profile & calculate TDEE ─────────────────────
+    // ─── Idempotency: return cached result if already completed ───────
+    if (idempotencyKey && idempotencyKey.trim()) {
+      const { data: existing } = await adminClient
+        .from("plan_generations")
+        .select("id, status, result_summary")
+        .eq("idempotency_key", idempotencyKey.trim())
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (existing?.status === "completed" && existing.result_summary) {
+        const r = existing.result_summary as Record<string, unknown>;
+        return new Response(
+          JSON.stringify({
+            success: true,
+            daily_calories: r.daily_calories,
+            days_planned: r.days_planned,
+            meals_created: r.meals_created,
+            daily_slots_filled: r.daily_slots_filled,
+            start_date: r.start_date,
+            end_date: r.end_date,
+            from_cache: true,
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
+
+    const todayForScope = startDate || new Date().toISOString().split("T")[0];
+    if (idempotencyKey && idempotencyKey.trim()) {
+      const { data: inserted, error: insErr } = await adminClient
+        .from("plan_generations")
+        .insert({
+          user_id: user.id,
+          generation_type: "weekly_meal",
+          scope: todayForScope,
+          idempotency_key: idempotencyKey.trim(),
+          status: "started",
+        })
+        .select("id")
+        .single();
+      if (insErr?.code === "23505") {
+        const { data: existing } = await adminClient
+          .from("plan_generations")
+          .select("id, status, result_summary")
+          .eq("idempotency_key", idempotencyKey.trim())
+          .eq("user_id", user.id)
+          .maybeSingle();
+        if (existing?.status === "completed" && existing.result_summary) {
+          const r = existing.result_summary as Record<string, unknown>;
+          return new Response(
+            JSON.stringify({
+              success: true,
+              daily_calories: r.daily_calories,
+              days_planned: r.days_planned,
+              meals_created: r.meals_created,
+              daily_slots_filled: r.daily_slots_filled,
+              start_date: r.start_date,
+              end_date: r.end_date,
+              from_cache: true,
+            }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+      }
+      if (!insErr && inserted?.id) generationId = inserted.id;
+    }
+
+    // ─── STEP 1: Fetch profile, user_insights & calculate TDEE ───────
     const { data: profile } = await supabase
       .from("profiles")
       .select("*")
       .eq("id", user.id)
       .single();
 
-    const dailyCalories = profile?.daily_calorie_target || calculateTDEE(profile || {});
+    const { data: insights } = await adminClient
+      .from("user_insights")
+      .select("*")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    let dailyCalories = profile?.daily_calorie_target || calculateTDEE(profile || {});
+    if (insights?.avg_calories_consumed && insights.avg_calories_consumed > 0) {
+      dailyCalories = Math.round(dailyCalories * 0.7 + insights.avg_calories_consumed * 0.3);
+    }
     const goalType = mapGoalToTemplateType(profile?.fitness_goal);
     const mealsPerDay = profile?.meals_per_day || 3;
     const cookingStyle = profile?.cooking_style_preference || "cook_daily";
@@ -288,15 +366,13 @@ serve(async (req) => {
           }
         }
 
-        // Select template avoiding recent repeats
-        let selectedTemplate = null;
-        const unused = slotTemplates.filter((t: any) => !usedTemplateIds[slot].has(t.id));
-        if (unused.length > 0) {
-          selectedTemplate = unused[Math.floor(Math.random() * unused.length)];
-        } else {
-          usedTemplateIds[slot].clear();
-          selectedTemplate = slotTemplates[Math.floor(Math.random() * slotTemplates.length)];
-        }
+        const selectedTemplate = selectMealTemplate(slotTemplates, {
+          usedTemplateIds: usedTemplateIds[slot],
+          insights: insights ?? undefined,
+          seed: `${dateStr}:${slot}`,
+          topN: 5,
+        });
+        if (!selectedTemplate) continue;
         usedTemplateIds[slot].add(selectedTemplate.id);
 
         // Scale macros to match slot calorie target
@@ -373,22 +449,37 @@ serve(async (req) => {
       }
     }
 
+    const resultSummary = {
+      daily_calories: dailyCalories,
+      days_planned: dates.length,
+      meals_created: userMealInserts.length,
+      daily_slots_filled: dailyMealInserts.length,
+      start_date: dates[0],
+      end_date: dates[dates.length - 1],
+    };
+
+    if (generationId) {
+      await adminClient
+        .from("plan_generations")
+        .update({ status: "completed", result_summary: resultSummary })
+        .eq("id", generationId);
+    }
+
     return new Response(
-      JSON.stringify({
-        success: true,
-        daily_calories: dailyCalories,
-        days_planned: dates.length,
-        meals_created: userMealInserts.length,
-        daily_slots_filled: dailyMealInserts.length,
-        start_date: dates[0],
-        end_date: dates[dates.length - 1],
-      }),
+      JSON.stringify({ success: true, ...resultSummary }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error) {
+    const errMsg = error instanceof Error ? error.message : "Something went wrong";
     console.error("Generate Weekly Meal Plan error:", error);
+    if (generationId) {
+      await adminClient
+        .from("plan_generations")
+        .update({ status: "failed", error_message: errMsg })
+        .eq("id", generationId);
+    }
     return new Response(
-      JSON.stringify({ error: error instanceof Error ? error.message : "Something went wrong" }),
+      JSON.stringify({ error: errMsg }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }

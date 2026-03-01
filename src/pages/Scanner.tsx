@@ -2,10 +2,11 @@ import { useState, useRef, useEffect } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageContainer } from "@/components/layout/PageContainer";
 import { Button } from "@/components/ui/button";
-import { Camera, Upload, X, Loader2, Utensils, AlertCircle, Target, ArrowLeft, Check, Plus } from "lucide-react";
+import { Camera, Upload, X, Loader2, Utensils, AlertCircle, Target, ArrowLeft, Check } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
+import { useTemplateMeals } from "@/hooks/useTemplateMeals";
 
 // Types for Menu Scanner
 interface MenuAnalysis {
@@ -27,6 +28,8 @@ interface MenuAnalysis {
     name: string;
     reason: string;
     howItFitsYourPlan: string;
+    estimatedCalories?: number;
+    estimatedProtein?: number;
   };
 }
 
@@ -54,7 +57,14 @@ interface CalorieAnalysis {
 }
 
 type ScannerMode = "select" | "menu" | "calories";
+type MealSlot = "breakfast" | "lunch" | "dinner";
 type MealType = "breakfast" | "lunch" | "dinner" | "snack";
+
+const mealSlotLabels: Record<MealSlot, string> = {
+  breakfast: "Breakfast",
+  lunch: "Lunch",
+  dinner: "Dinner",
+};
 
 const mealTypeLabels: Record<MealType, string> = {
   breakfast: "Breakfast",
@@ -63,19 +73,37 @@ const mealTypeLabels: Record<MealType, string> = {
   snack: "Snack",
 };
 
+function getMealSlotFromTime(): MealSlot {
+  const hour = new Date().getHours();
+  if (hour < 10) return "breakfast";
+  if (hour < 15) return "lunch";
+  return "dinner";
+}
+
+async function logUserSignal(
+  signalType: string,
+  payload: Record<string, unknown>
+): Promise<void> {
+  await supabase.functions.invoke("log-user-signal", {
+    body: { signal_type: signalType, payload },
+  });
+}
+
 export default function Scanner() {
   const [mode, setMode] = useState<ScannerMode>("select");
   const [image, setImage] = useState<string | null>(null);
   const [selectedMealType, setSelectedMealType] = useState<MealType | null>(null);
+  const [mealSlot, setMealSlot] = useState<MealSlot | null>(() => getMealSlotFromTime());
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [menuAnalysis, setMenuAnalysis] = useState<MenuAnalysis | null>(null);
   const [calorieAnalysis, setCalorieAnalysis] = useState<CalorieAnalysis | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [userProfile, setUserProfile] = useState<any>(null);
-  const [isLogged, setIsLogged] = useState(false);
+  const [actionTaken, setActionTaken] = useState<"none" | "applied" | "logged">("none");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
   const { user } = useAuth();
+  const { updateMealFromScan, refetch: refetchMeals } = useTemplateMeals();
 
   // Fetch user profile for personalization
   useEffect(() => {
@@ -107,7 +135,8 @@ export default function Scanner() {
   };
 
   const analyzeMenu = async () => {
-    if (!image || !selectedMealType) {
+    const slot = selectedMealType || mealSlot;
+    if (!image || !slot) {
       toast({
         title: "Select meal type",
         description: "Please select which meal this is for",
@@ -123,7 +152,7 @@ export default function Scanner() {
       const { data, error: fnError } = await supabase.functions.invoke("analyze-menu", {
         body: {
           image,
-          mealType: selectedMealType,
+          mealType: slot,
           profile: userProfile,
         },
       });
@@ -186,13 +215,77 @@ export default function Scanner() {
     }
   };
 
-  const logCalories = () => {
-    // For now, just mark as logged - this could persist to a calorie_logs table
-    setIsLogged(true);
+  const handleApplyToCurrentMeal = async (
+    calories: number,
+    protein: number,
+    carbs: number,
+    fat: number,
+    foodName: string
+  ) => {
+    const slot = mealSlot || getMealSlotFromTime();
+    setMealSlot(slot);
+
+    const success = await updateMealFromScan(slot, { calories, protein, carbs, fats: fat });
+    if (success) {
+      await refetchMeals();
+      setActionTaken("applied");
+      toast({
+        title: "Applied to meal",
+        description: `Updated your ${mealSlotLabels[slot]} with the scanned data.`,
+      });
+    } else {
+      toast({
+        title: "No meal to update",
+        description: `You don't have a ${mealSlotLabels[slot]} planned for today. Logging as eaten instead.`,
+        variant: "destructive",
+      });
+      await handleLogAsEaten(calories, protein, carbs, fat, foodName);
+      return;
+    }
+
+    try {
+      await logUserSignal("food_scanned", {
+        calories,
+        protein,
+        carbs,
+        fat,
+        meal_slot: slot,
+        applied_to_plan: true,
+        food_name: foodName,
+      });
+    } catch (e) {
+      console.error("Failed to log food_scanned signal:", e);
+    }
+  };
+
+  const handleLogAsEaten = async (
+    calories: number,
+    protein: number,
+    carbs: number,
+    fat: number,
+    foodName: string
+  ) => {
+    const slot = mealSlot || getMealSlotFromTime();
+    setMealSlot(slot);
+    setActionTaken("logged");
     toast({
-      title: "Calories logged",
-      description: "Your coach can reference this in future conversations.",
+      title: "Logged as eaten",
+      description: "Your food has been logged. Your coach can reference this.",
     });
+
+    try {
+      await logUserSignal("food_scanned", {
+        calories,
+        protein,
+        carbs,
+        fat,
+        meal_slot: slot,
+        applied_to_plan: false,
+        food_name: foodName,
+      });
+    } catch (e) {
+      console.error("Failed to log food_scanned signal:", e);
+    }
   };
 
   const clearAll = () => {
@@ -201,7 +294,8 @@ export default function Scanner() {
     setCalorieAnalysis(null);
     setError(null);
     setSelectedMealType(null);
-    setIsLogged(false);
+    setMealSlot(getMealSlotFromTime());
+    setActionTaken("none");
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -336,27 +430,34 @@ export default function Scanner() {
                   </Button>
                 </div>
 
-                {/* Meal Type Selection */}
+                {/* Meal Slot Selection - time-based default with 3-option override */}
                 {!menuAnalysis && !isAnalyzing && (
                   <div className="space-y-3">
                     <p className="text-sm font-medium text-foreground">What meal is this for?</p>
-                    <div className="grid grid-cols-4 gap-2">
-                      {(Object.keys(mealTypeLabels) as MealType[]).map((type) => (
+                    <div className="grid grid-cols-3 gap-2">
+                      {(Object.keys(mealSlotLabels) as MealSlot[]).map((slot) => (
                         <Button
-                          key={type}
-                          variant={selectedMealType === type ? "default" : "outline"}
+                          key={slot}
+                          variant={(selectedMealType || mealSlot) === slot ? "default" : "outline"}
                           size="sm"
-                          className={selectedMealType === type ? "gradient-primary" : ""}
-                          onClick={() => setSelectedMealType(type)}
+                          className={(selectedMealType || mealSlot) === slot ? "gradient-primary" : ""}
+                          onClick={() => {
+                            setSelectedMealType(slot);
+                            setMealSlot(slot);
+                          }}
                         >
-                          {mealTypeLabels[type]}
+                          {mealSlotLabels[slot]}
                         </Button>
                       ))}
                     </div>
 
-                    <Button className="w-full gradient-primary mt-4" onClick={analyzeMenu} disabled={!selectedMealType}>
+                    <Button
+                      className="w-full gradient-primary mt-4"
+                      onClick={analyzeMenu}
+                      disabled={!selectedMealType && !mealSlot}
+                    >
                       <Utensils className="mr-2 h-4 w-4" />
-                      Analyze for {selectedMealType ? mealTypeLabels[selectedMealType] : "..."}
+                      Analyze for {(selectedMealType || mealSlot) ? mealSlotLabels[selectedMealType as MealSlot] || mealSlotLabels[mealSlot!] : "..."}
                     </Button>
                   </div>
                 )}
@@ -454,6 +555,72 @@ export default function Scanner() {
                           )}
                         </div>
                       ))}
+                    </div>
+
+                    {/* Meal Slot Picker for Apply/Log */}
+                    <div className="space-y-3 pt-2">
+                      <p className="text-sm font-medium text-foreground">Apply or log this meal?</p>
+                      <div className="grid grid-cols-3 gap-2">
+                        {(Object.keys(mealSlotLabels) as MealSlot[]).map((slot) => (
+                          <Button
+                            key={slot}
+                            variant={mealSlot === slot ? "default" : "outline"}
+                            size="sm"
+                            className={mealSlot === slot ? "gradient-primary" : ""}
+                            onClick={() => setMealSlot(slot)}
+                          >
+                            {mealSlotLabels[slot]}
+                          </Button>
+                        ))}
+                      </div>
+                      {actionTaken === "none" ? (
+                        <div className="flex gap-3">
+                          <Button
+                            className="flex-1 gradient-primary"
+                            onClick={() => {
+                              const rec = menuAnalysis.recommendation;
+                              const cal =
+                                rec.estimatedCalories ??
+                                menuAnalysis.healthyChoices[0]?.estimatedCalories ??
+                                menuAnalysis.yourTargets?.calorieTarget / 4 ??
+                                500;
+                              const pro =
+                                rec.estimatedProtein ??
+                                menuAnalysis.healthyChoices[0]?.estimatedProtein ??
+                                menuAnalysis.yourTargets?.proteinTarget / 4 ??
+                                30;
+                              handleApplyToCurrentMeal(cal, pro, Math.round(cal * 0.3), Math.round(cal * 0.2), rec.name);
+                            }}
+                          >
+                            Apply to current meal
+                          </Button>
+                          <Button
+                            className="flex-1"
+                            variant="outline"
+                            onClick={() => {
+                              const rec = menuAnalysis.recommendation;
+                              const cal =
+                                rec.estimatedCalories ??
+                                menuAnalysis.healthyChoices[0]?.estimatedCalories ??
+                                500;
+                              const pro =
+                                rec.estimatedProtein ??
+                                menuAnalysis.healthyChoices[0]?.estimatedProtein ??
+                                30;
+                              handleLogAsEaten(cal, pro, Math.round(cal * 0.3), Math.round(cal * 0.2), rec.name);
+                            }}
+                          >
+                            Log as eaten
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-center gap-2 text-green-400 py-2">
+                          <Check className="h-4 w-4" />
+                          <span className="text-sm">
+                            {actionTaken === "applied" ? "Applied to meal" : "Logged"}
+                          </span>
+                        </div>
+                      )}
                     </div>
 
                     <Button variant="outline" className="w-full" onClick={clearAll}>
@@ -594,17 +761,64 @@ export default function Scanner() {
                       </div>
                     )}
 
+                    {/* Meal Slot Picker */}
+                    <div className="space-y-3 pt-2">
+                      <p className="text-sm font-medium text-foreground">Which meal is this for?</p>
+                      <div className="grid grid-cols-3 gap-2">
+                        {(Object.keys(mealSlotLabels) as MealSlot[]).map((slot) => (
+                          <Button
+                            key={slot}
+                            variant={mealSlot === slot ? "default" : "outline"}
+                            size="sm"
+                            className={mealSlot === slot ? "gradient-primary" : ""}
+                            onClick={() => setMealSlot(slot)}
+                          >
+                            {mealSlotLabels[slot]}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+
                     {/* Action Buttons */}
                     <div className="space-y-3 pt-2">
-                      {!isLogged ? (
-                        <Button className="w-full" variant="outline" onClick={logCalories}>
-                          <Plus className="mr-2 h-4 w-4" />
-                          Log Calories (Optional)
-                        </Button>
+                      {actionTaken === "none" ? (
+                        <>
+                          <Button
+                            className="w-full gradient-primary"
+                            onClick={() =>
+                              handleApplyToCurrentMeal(
+                                Math.round((calorieAnalysis.total_estimate.calories_low + calorieAnalysis.total_estimate.calories_high) / 2),
+                                Math.round((calorieAnalysis.total_estimate.protein_low + calorieAnalysis.total_estimate.protein_high) / 2),
+                                Math.round((calorieAnalysis.total_estimate.carbs_low + calorieAnalysis.total_estimate.carbs_high) / 2),
+                                Math.round((calorieAnalysis.total_estimate.fats_low + calorieAnalysis.total_estimate.fats_high) / 2),
+                                calorieAnalysis.meal_description || "Scanned food"
+                              )
+                            }
+                          >
+                            Apply to current meal
+                          </Button>
+                          <Button
+                            className="w-full"
+                            variant="outline"
+                            onClick={() =>
+                              handleLogAsEaten(
+                                Math.round((calorieAnalysis.total_estimate.calories_low + calorieAnalysis.total_estimate.calories_high) / 2),
+                                Math.round((calorieAnalysis.total_estimate.protein_low + calorieAnalysis.total_estimate.protein_high) / 2),
+                                Math.round((calorieAnalysis.total_estimate.carbs_low + calorieAnalysis.total_estimate.carbs_high) / 2),
+                                Math.round((calorieAnalysis.total_estimate.fats_low + calorieAnalysis.total_estimate.fats_high) / 2),
+                                calorieAnalysis.meal_description || "Scanned food"
+                              )
+                            }
+                          >
+                            Log as eaten
+                          </Button>
+                        </>
                       ) : (
                         <div className="flex items-center justify-center gap-2 text-green-400 py-2">
                           <Check className="h-4 w-4" />
-                          <span className="text-sm">Logged</span>
+                          <span className="text-sm">
+                            {actionTaken === "applied" ? "Applied to meal" : "Logged"}
+                          </span>
                         </div>
                       )}
 

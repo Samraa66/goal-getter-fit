@@ -193,11 +193,14 @@ Respond with a JSON object in this exact format:
   "recommendation": {
     "name": "Best overall choice for THIS USER",
     "reason": "Why this is the top pick based on their profile",
-    "howItFitsYourPlan": "Detailed explanation of how this meal fits into their daily plan for ${goal}"
+    "howItFitsYourPlan": "Detailed explanation of how this meal fits into their daily plan for ${goal}",
+    "estimatedCalories": 450,
+    "estimatedProtein": 35
   }
 }
 
-Include 2-4 healthy choices. Be specific with calorie/protein estimates.`;
+Include 2-4 healthy choices. Be specific with calorie/protein estimates.
+The recommendation MUST include estimatedCalories and estimatedProtein (your best estimate for that dish).`;
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",

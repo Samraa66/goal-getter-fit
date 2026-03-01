@@ -46,6 +46,12 @@ export function useWeeklyCheckin() {
         throw new Error(error.message);
       }
 
+      supabase.functions
+        .invoke("log-user-signal", {
+          body: { signal_type: "checkin_submitted", payload: params },
+        })
+        .catch(() => {});
+
       // Show appropriate toast based on tier and result
       if (data.adjustmentResult?.adjustmentsApplied > 0) {
         toast({

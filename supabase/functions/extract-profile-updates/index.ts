@@ -41,6 +41,7 @@ serve(async (req) => {
 
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
 
     if (!LOVABLE_API_KEY) {
@@ -51,6 +52,9 @@ serve(async (req) => {
     const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       global: { headers: { Authorization: authHeader } },
     });
+
+    // Service client for user_insights (RLS only allows SELECT for users)
+    const serviceClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
     // SECURITY: Get authenticated user from JWT - never trust client-supplied userId
     const { data: { user }, error: userError } = await supabase.auth.getUser();
@@ -121,6 +125,17 @@ WORKOUT MODIFICATION triggers:
 6. "I don't want this breakfast" → planModification with type "meal", targetMealType: "breakfast"
 7. "Change my dinner to salmon" → planModification with type "meal", targetMealType: "dinner", context: "salmon"
 
+====== USER_INSIGHTS (for progressive modeling) ======
+Also extract signals for user_insights - merge with existing, never replace:
+- avoided_foods: array of foods/ingredients user dislikes or wants to avoid (merge with disliked_foods)
+- favorite_cuisines: array (e.g. ["Italian", "Japanese", "Mexican"])
+- preferred_meal_times: object with keys breakfast, lunch, dinner - values as "HH:mm" (e.g. {"breakfast": "07:30", "lunch": "12:30"})
+- energy_pattern: "morning" | "evening" | "inconsistent" - when user has most energy
+- lifestyle_details: object with sleep_schedule, stress_level, job_type, daily_routine if mentioned
+- physical_feedback: "tired" | "sore" | "energized" | "recovering" if mentioned
+- goal_shifts: any change in motivation or goals
+- schedule_constraints: travel, busy days, limited equipment
+
 ====== OUTPUT FORMAT ======
 Return ONLY valid JSON:
 {
@@ -134,7 +149,14 @@ Return ONLY valid JSON:
     "context": "specific details (e.g., requested food like salmon)"
   },
   "needsWorkoutRegeneration": true/false,
-  "needsMealRegeneration": true/false
+  "needsMealRegeneration": true/false,
+  "userInsights": {
+    "avoided_foods": [],
+    "favorite_cuisines": [],
+    "preferred_meal_times": {},
+    "energy_pattern": null,
+    "lifestyle_details": {}
+  }
 }
 
 If nothing relevant found: {"hasUpdates": false}
@@ -203,16 +225,13 @@ CRITICAL:
     // Check if there's a plan modification request even without profile updates
     const planModification = extractionResult.planModification || {};
     const hasPlanModification = planModification.type === 'meal' || planModification.type === 'workout';
-
-    if (!extractionResult.hasUpdates && !hasPlanModification) {
-      return new Response(JSON.stringify({ hasUpdates: false }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    const hasProfileUpdates = extractionResult.hasUpdates || hasPlanModification;
 
     const updates: ProfileUpdate = extractionResult.updates || {};
     const weeklyActivities: WeeklyActivityUpdate = extractionResult.weeklyActivities || {};
+    const userInsights = extractionResult.userInsights || {};
 
+    if (hasProfileUpdates) {
     // Fetch current profile to merge arrays - using authenticated user's ID
     const { data: currentProfile } = await supabase
       .from("profiles")
@@ -248,8 +267,65 @@ CRITICAL:
       }
       console.log("Profile updated:", mergedUpdates);
     }
+    }
 
-    // Determine what needs regeneration (including plan modification requests)
+    // Update user_insights if we extracted any signals
+    if (userInsights && Object.keys(userInsights).length > 0) {
+      try {
+        const { data: currentInsights } = await serviceClient
+          .from("user_insights")
+          .select("avoided_foods, favorite_cuisines, preferred_meal_times, energy_pattern")
+          .eq("id", userId)
+          .maybeSingle();
+
+        const mergedAvoided = userInsights.avoided_foods?.length
+          ? [...new Set([...(currentInsights?.avoided_foods || []), ...userInsights.avoided_foods])]
+          : undefined;
+        const mergedCuisines = userInsights.favorite_cuisines?.length
+          ? [...new Set([...(currentInsights?.favorite_cuisines || []), ...userInsights.favorite_cuisines])]
+          : undefined;
+        const mergedMealTimes = userInsights.preferred_meal_times && Object.keys(userInsights.preferred_meal_times).length
+          ? { ...(currentInsights?.preferred_meal_times || {}), ...userInsights.preferred_meal_times }
+          : undefined;
+
+        const insightsUpdate: Record<string, unknown> = {};
+        if (mergedAvoided) insightsUpdate.avoided_foods = mergedAvoided;
+        if (mergedCuisines) insightsUpdate.favorite_cuisines = mergedCuisines;
+        if (mergedMealTimes) insightsUpdate.preferred_meal_times = mergedMealTimes;
+        if (userInsights.energy_pattern) insightsUpdate.energy_pattern = userInsights.energy_pattern;
+
+        if (Object.keys(insightsUpdate).length > 0) {
+          await serviceClient
+            .from("user_insights")
+            .upsert({ id: userId, ...insightsUpdate, last_updated: new Date().toISOString() }, { onConflict: "id" });
+        }
+      } catch (e) {
+        console.error("Failed to update user_insights:", e);
+      }
+    }
+
+    // Log coach_message signal for progressive modeling
+    try {
+      await supabase.from("user_signals").insert({
+        user_id: userId,
+        signal_type: "coach_message",
+        payload: {
+          extracted_updates: updates,
+          extracted_insights: userInsights,
+          plan_modification: hasPlanModification ? planModification : undefined,
+        },
+      });
+    } catch (e) {
+      console.error("Failed to log coach_message signal:", e);
+    }
+
+    if (!hasProfileUpdates) {
+      return new Response(JSON.stringify({ hasUpdates: false }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Determine what needs regeneration (including plan modification requests) - only when hasProfileUpdates
     const needsMealRegeneration = !!(
       updates.allergies ||
       updates.disliked_foods ||

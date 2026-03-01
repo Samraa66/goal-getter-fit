@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { validateWorkoutPersonalization } from "../_shared/validation.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -49,6 +50,12 @@ serve(async (req) => {
       });
     }
 
+    const { data: userInsights } = await adminClient
+      .from("user_insights")
+      .select("*")
+      .eq("id", user.id)
+      .maybeSingle();
+
     const { templates, workoutsPerWeek, preferredSplit, otherSports } = await req.json();
     if (!templates || !Array.isArray(templates) || templates.length === 0) {
       throw new Error("No templates provided");
@@ -67,9 +74,10 @@ serve(async (req) => {
     const weight = profile?.weight_current || 70;
     const split = preferredSplit || profile?.preferred_split || "full_body";
 
-    // Smart template selection: group by muscle_group_focus, build balanced week
+    // Smart template selection: group by muscle_group_focus, build balanced week (uses template_affinity)
     const count = Math.min(workoutsPerWeek || 3, templates.length);
-    const selected = buildBalancedSelection(templates, count, split);
+    const templateAffinity = (userInsights?.template_affinity as Record<string, number>) || {};
+    const selected = buildBalancedSelection(templates, count, split, templateAffinity);
 
     const templateDataForAI = selected.map((t: any, i: number) => ({
       template_id: t.id,
@@ -85,6 +93,15 @@ serve(async (req) => {
       ? `\n- Other sports/activities: ${otherSports.join(", ")} (reduce overlap with these muscle groups)`
       : "";
 
+    const consistencyScore = (userInsights?.workout_consistency_score as number) ?? 0.5;
+    const mostCompletedType = userInsights?.most_completed_workout_type as string | undefined;
+    const consistencyContext = consistencyScore < 0.4
+      ? `\n- CONSISTENCY: User completes ${Math.round(consistencyScore * 100)}% of workouts. Use EASIER progressions, more rest days, encouraging tone.`
+      : consistencyScore > 0.7
+        ? `\n- CONSISTENCY: User completes ${Math.round(consistencyScore * 100)}% of workouts. Push harder, add challenge.`
+        : "";
+    const mostCompletedContext = mostCompletedType ? `\n- User completes most: ${mostCompletedType} - bias toward what they actually do.` : "";
+
     const systemPrompt = `You are an elite strength coach. You will receive structured workout template JSON objects with metadata.
 
 YOUR TASK: Modify sets, reps, and rest_seconds to match the user's experience level, goals, and weekly training stress.
@@ -95,7 +112,7 @@ USER PROFILE:
 - Gender: ${gender}
 - Weight: ${weight} kg
 - Training split: ${split}
-- Workouts per week: ${count}${sportsContext}
+- Workouts per week: ${count}${sportsContext}${consistencyContext}${mostCompletedContext}
 
 TEMPLATE METADATA (use for context, do NOT include in output):
 - training_stress: indicates how demanding the session is (low/moderate/high)
@@ -161,10 +178,29 @@ OUTPUT FORMAT (array of objects):
     if (content.endsWith("```")) content = content.slice(0, -3);
     content = content.trim();
 
-    const personalized = JSON.parse(content);
+    const personalized = JSON.parse(content) as any[];
     if (!Array.isArray(personalized)) throw new Error("AI returned non-array");
 
-    // Delete existing user workouts
+    const fallbackUsed: string[] = [];
+
+    const resolved = personalized.map((p: any, i: number) => {
+      const template = selected.find((t: any) => t.id === p.template_id) || selected[i];
+      const validation = validateWorkoutPersonalization({ personalized_data: p.personalized_data });
+
+      if (!validation.valid) {
+        console.warn("Personalize-workout validation failed for template_id:", p.template_id, validation.errors);
+        fallbackUsed.push(p.template_id || template?.id);
+        return {
+          template_id: template.id,
+          personalized_data: template.data,
+        };
+      }
+      return {
+        template_id: p.template_id,
+        personalized_data: p.personalized_data,
+      };
+    });
+
     await adminClient
       .from("user_workouts")
       .delete()
@@ -178,13 +214,13 @@ OUTPUT FORMAT (array of objects):
       5: [1, 2, 3, 5, 6],
       6: [1, 2, 3, 4, 5, 6],
     };
-    const days = dayMappings[personalized.length] || dayMappings[3];
-
+    const days = dayMappings[resolved.length] || dayMappings[3];
     const today = new Date().toISOString().split("T")[0];
-    const inserts = personalized.map((p: any, i: number) => ({
+
+    const inserts = resolved.map((r: any, i: number) => ({
       user_id: user.id,
-      base_template_id: p.template_id,
-      personalized_data: p.personalized_data,
+      base_template_id: r.template_id,
+      personalized_data: r.personalized_data,
       date_assigned: today,
       day_of_week: days[i] || i + 1,
     }));
@@ -198,7 +234,10 @@ OUTPUT FORMAT (array of objects):
       throw new Error("Failed to save personalized workouts");
     }
 
-    return new Response(JSON.stringify({ success: true, count: inserts.length }), {
+    const body: { success: boolean; count: number; fallback_used?: string[] } = { success: true, count: inserts.length };
+    if (fallbackUsed.length > 0) body.fallback_used = fallbackUsed;
+
+    return new Response(JSON.stringify(body), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
@@ -210,10 +249,9 @@ OUTPUT FORMAT (array of objects):
   }
 });
 
-/** Build a balanced selection of templates for the week based on split */
-function buildBalancedSelection(templates: any[], count: number, split: string): any[] {
+/** Build a balanced selection of templates for the week based on split; use template_affinity when choosing */
+function buildBalancedSelection(templates: any[], count: number, split: string, templateAffinity: Record<string, number> = {}): any[] {
   const regular = templates.filter((t: any) => !t.is_active_recovery);
-  const recovery = templates.filter((t: any) => t.is_active_recovery);
 
   const byFocus: Record<string, any[]> = {};
   for (const t of regular) {
@@ -232,21 +270,35 @@ function buildBalancedSelection(templates: any[], count: number, split: string):
 
   const rotation = rotations[split] || rotations["full_body"];
 
+  function pickFromPool(pool: any[]): any {
+    if (pool.length === 0) return null;
+    const unused = pool.filter((t: any) => !selected.includes(t));
+    const source = unused.length > 0 ? unused : pool;
+    source.sort((a: any, b: any) => {
+      const affA = templateAffinity[a.id] ?? 0;
+      const affB = templateAffinity[b.id] ?? 0;
+      if (affB !== affA) return affB - affA;
+      return (a.id || "").localeCompare(b.id || "");
+    });
+    return source[0];
+  }
+
   for (let i = 0; i < count && i < 6; i++) {
     const focus = rotation[i % rotation.length];
     const pool = byFocus[focus] || regular;
-    if (pool.length > 0) {
-      const unused = pool.filter((t: any) => !selected.includes(t));
-      const source = unused.length > 0 ? unused : pool;
-      selected.push(source[Math.floor(Math.random() * source.length)]);
-    }
+    const picked = pickFromPool(pool);
+    if (picked) selected.push(picked);
   }
 
-  // Pad if needed
   if (selected.length < count) {
     const remaining = regular.filter((t: any) => !selected.includes(t));
-    const shuffled = [...remaining].sort(() => Math.random() - 0.5);
-    for (const t of shuffled) {
+    remaining.sort((a: any, b: any) => {
+      const affA = templateAffinity[a.id] ?? 0;
+      const affB = templateAffinity[b.id] ?? 0;
+      if (affB !== affA) return affB - affA;
+      return (a.id || "").localeCompare(b.id || "");
+    });
+    for (const t of remaining) {
       if (selected.length >= count) break;
       selected.push(t);
     }

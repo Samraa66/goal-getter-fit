@@ -116,6 +116,7 @@ export default function Auth() {
         });
         
         if (error) {
+          console.error("Sign up error:", error);
           if (error.message.includes("User already registered")) {
             toast({
               title: "Account exists",
@@ -125,7 +126,7 @@ export default function Auth() {
           } else {
             toast({
               title: "Sign up failed",
-              description: error.message,
+              description: error.message || "Check the console for details.",
               variant: "destructive",
             });
           }
@@ -140,20 +141,27 @@ export default function Auth() {
             }, { onConflict: "id" });
 
           if (profileError) {
-            console.error("Error creating profile:", profileError);
+            console.error("Error creating/updating profile after signup:", profileError);
+            toast({
+              title: "Account created",
+              description: "There was an issue saving your profile. Try logging in.",
+              variant: "default",
+            });
+          } else {
+            toast({
+              title: "Account created!",
+              description: "Welcome to Forme. Let's set up your profile.",
+            });
+            navigate("/onboarding");
           }
-
-          toast({
-            title: "Account created!",
-            description: "Welcome to Forme. Let's set up your profile.",
-          });
-          navigate("/onboarding");
         }
       }
     } catch (error) {
+      console.error("Auth error:", error);
+      const message = error instanceof Error ? error.message : "An unexpected error occurred. Please try again.";
       toast({
         title: "Error",
-        description: "An unexpected error occurred. Please try again.",
+        description: message,
         variant: "destructive",
       });
     } finally {

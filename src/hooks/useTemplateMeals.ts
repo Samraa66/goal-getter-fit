@@ -91,6 +91,18 @@ export function useTemplateMeals(date: Date = new Date()) {
 
         if (!response.ok) {
           const err = await response.json().catch(() => ({}));
+          if (response.status === 429) {
+            toast.error("Rate limit", {
+              description: err.error || err.message || "Wait a moment before trying again.",
+            });
+            return;
+          }
+          if (response.status === 402) {
+            toast.error("Limit reached", {
+              description: err.error || err.message || "Upgrade for more AI personalization.",
+            });
+            return;
+          }
           throw new Error(err.error || "Personalization failed");
         }
 
@@ -130,9 +142,44 @@ export function useTemplateMeals(date: Date = new Date()) {
     }
   }, [user, dateStr, isPremium, fetchMeals]);
 
+  // Update meal with scan results (calories, macros)
+  const updateMealFromScan = useCallback(
+    async (
+      mealSlot: "breakfast" | "lunch" | "dinner",
+      scanData: {
+        calories: number;
+        protein: number;
+        carbs: number;
+        fats: number;
+      }
+    ) => {
+      if (!user) return false;
+      const meal = userMeals.find((m) => m.meal_type === mealSlot);
+      if (!meal) return false;
+      const { error } = await supabase
+        .from("user_meals")
+        .update({
+          total_calories: scanData.calories,
+          total_protein: scanData.protein,
+          total_carbs: scanData.carbs,
+          total_fats: scanData.fats,
+          is_completed: true,
+        })
+        .eq("id", meal.id);
+      if (error) {
+        console.error("Error updating meal from scan:", error);
+        return false;
+      }
+      await fetchMeals();
+      return true;
+    },
+    [user, userMeals, fetchMeals]
+  );
+
   // Toggle meal completion
   const toggleComplete = async (mealId: string, completed: boolean) => {
     try {
+      const meal = userMeals.find((m) => m.id === mealId);
       const { error } = await supabase
         .from("user_meals")
         .update({ is_completed: completed })
@@ -142,6 +189,18 @@ export function useTemplateMeals(date: Date = new Date()) {
       setUserMeals((prev) =>
         prev.map((m) => (m.id === mealId ? { ...m, is_completed: completed } : m))
       );
+
+      // Log signal for progressive modeling
+      if (completed && meal?.base_template_id) {
+        supabase.functions
+          .invoke("log-user-signal", {
+            body: {
+              signal_type: "meal_completed",
+              payload: { meal_template_id: meal.base_template_id, meal_type: meal.meal_type },
+            },
+          })
+          .catch(() => {});
+      }
     } catch (error) {
       console.error("Error toggling meal:", error);
       toast.error("Failed to update meal");
@@ -164,6 +223,7 @@ export function useTemplateMeals(date: Date = new Date()) {
     isGenerating,
     generatePlan,
     toggleComplete,
+    updateMealFromScan,
     refetch: fetchMeals,
     totalCalories,
     totalProtein,

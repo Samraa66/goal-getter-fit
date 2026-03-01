@@ -1,5 +1,8 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { validateMealPersonalization } from "../_shared/validation.ts";
+import { scaleTemplate, macrosFromScaledData } from "../_shared/meal-utils.ts";
+import { selectMealTemplate } from "../_shared/template-selection.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -49,6 +52,19 @@ serve(async (req) => {
       });
     }
 
+    const { data: subscription } = await adminClient
+      .from("user_subscriptions")
+      .select("tier")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    const isPremium = subscription?.tier === "paid";
+
+    const { data: userInsights } = await adminClient
+      .from("user_insights")
+      .select("*")
+      .eq("id", user.id)
+      .maybeSingle();
+
     const { templates, date } = await req.json();
     if (!templates || !Array.isArray(templates) || templates.length === 0) {
       throw new Error("No templates provided");
@@ -61,18 +77,32 @@ serve(async (req) => {
       .eq("id", user.id)
       .single();
 
-    const calorieTarget = profile?.daily_calorie_target || 2000;
+    let calorieTarget = profile?.daily_calorie_target || 2000;
+    if (isPremium && userInsights?.avg_calories_consumed && userInsights.avg_calories_consumed > 0) {
+      calorieTarget = Math.round(calorieTarget * 0.7 + userInsights.avg_calories_consumed * 0.3);
+    }
     const allergies = profile?.allergies || [];
     const dislikedFoods = profile?.disliked_foods || [];
+    const avoidedFoods = (userInsights?.avoided_foods as string[]) || [];
+    const allAvoided = [...new Set([...dislikedFoods, ...avoidedFoods])];
+    const favoriteCuisines = (userInsights?.favorite_cuisines as string[]) || [];
     const dietaryPref = profile?.dietary_preference || "none";
 
-    // Select one template per meal type
+    // Select one template per meal type (affinity + cuisine scoring, deterministic tie-break)
     const mealTypes = ["breakfast", "lunch", "dinner", "snack"];
     const selectedTemplates: any[] = [];
+    const usedIds = new Set<string>();
     for (const type of mealTypes) {
       const matching = templates.filter((t: any) => t.meal_type === type);
-      if (matching.length > 0) {
-        selectedTemplates.push(matching[Math.floor(Math.random() * matching.length)]);
+      const selected = selectMealTemplate(matching, {
+        usedTemplateIds: usedIds,
+        insights: userInsights ?? undefined,
+        seed: `personalize:${date}:${type}`,
+        topN: 5,
+      });
+      if (selected) {
+        selectedTemplates.push(selected);
+        usedIds.add(selected.id);
       }
     }
 
@@ -95,7 +125,9 @@ USER PROFILE:
 - Daily calorie target: ${calorieTarget} kcal
 - Dietary preference: ${dietaryPref}
 ${allergies.length > 0 ? `- ALLERGIES (REMOVE these ingredients): ${allergies.join(", ")}` : ""}
-${dislikedFoods.length > 0 ? `- Disliked foods (substitute): ${dislikedFoods.join(", ")}` : ""}
+${allAvoided.length > 0 ? `- NEVER include or suggest these foods/ingredients: ${allAvoided.join(", ")}` : ""}
+${favoriteCuisines.length > 0 ? `- PREFER meals from these cuisines: ${favoriteCuisines.join(", ")}` : ""}
+${isPremium && userInsights?.most_skipped_meal_type ? `- User often skips ${userInsights.most_skipped_meal_type}; consider lighter/simpler options for that slot` : ""}
 
 RULES:
 1. ONLY modify "grams", "calories", "protein_g", "carbs_g", "fats_g" values
@@ -153,29 +185,63 @@ OUTPUT FORMAT (array of objects):
     if (content.endsWith("```")) content = content.slice(0, -3);
     content = content.trim();
 
-    const personalized = JSON.parse(content);
+    let personalized = JSON.parse(content) as any[];
 
     if (!Array.isArray(personalized)) throw new Error("AI returned non-array");
 
+    const profileForValidation = {
+      allergies: profile?.allergies ?? [],
+      disliked_foods: profile?.disliked_foods ?? [],
+    };
+
+    // Per-meal calorie share (simple equal split)
+    const caloriesPerMeal = Math.round(calorieTarget / Math.max(1, selectedTemplates.length));
+    const fallbackUsed: string[] = [];
+
+    const inserts = personalized.map((p: any, index: number) => {
+      const template = selectedTemplates.find((t: any) => t.id === p.template_id) || selectedTemplates[index];
+      const validation = validateMealPersonalization(
+        { personalized_data: p.personalized_data, total_calories: p.total_calories, total_protein: p.total_protein, total_carbs: p.total_carbs, total_fats: p.total_fats },
+        profileForValidation
+      );
+
+      if (!validation.valid) {
+        console.warn("Personalize-meal validation failed for template_id:", p.template_id, validation.errors);
+        fallbackUsed.push(p.template_id || template?.id);
+        const scaledData = scaleTemplate(template, caloriesPerMeal);
+        const macros = macrosFromScaledData(scaledData);
+        return {
+          user_id: user.id,
+          base_template_id: template.id,
+          personalized_data: scaledData,
+          date_assigned: date,
+          meal_type: p.meal_type || template.meal_type,
+          total_calories: macros.total_calories,
+          total_protein: macros.total_protein,
+          total_carbs: macros.total_carbs,
+          total_fats: macros.total_fats,
+        };
+      }
+
+      return {
+        user_id: user.id,
+        base_template_id: p.template_id,
+        personalized_data: p.personalized_data,
+        date_assigned: date,
+        meal_type: p.meal_type,
+        total_calories: p.total_calories,
+        total_protein: p.total_protein,
+        total_carbs: p.total_carbs,
+        total_fats: p.total_fats,
+      };
+    });
+
     // Save personalized meals to user_meals
-    // First delete any existing for this date
-    await supabase
+    await adminClient
       .from("user_meals")
       .delete()
       .eq("user_id", user.id)
       .eq("date_assigned", date);
-
-    const inserts = personalized.map((p: any) => ({
-      user_id: user.id,
-      base_template_id: p.template_id,
-      personalized_data: p.personalized_data,
-      date_assigned: date,
-      meal_type: p.meal_type,
-      total_calories: p.total_calories,
-      total_protein: p.total_protein,
-      total_carbs: p.total_carbs,
-      total_fats: p.total_fats,
-    }));
 
     const { error: insertErr } = await adminClient
       .from("user_meals")
@@ -186,7 +252,10 @@ OUTPUT FORMAT (array of objects):
       throw new Error("Failed to save personalized meals");
     }
 
-    return new Response(JSON.stringify({ success: true, count: inserts.length }), {
+    const body: { success: boolean; count: number; fallback_used?: string[] } = { success: true, count: inserts.length };
+    if (fallbackUsed.length > 0) body.fallback_used = fallbackUsed;
+
+    return new Response(JSON.stringify(body), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {

@@ -129,6 +129,24 @@ serve(async (req) => {
 
     console.log("AI Coach: Processing request for authenticated user", userId, "with", messages.length, "messages");
 
+    // Fetch subscription tier and user_insights for premium users
+    const { data: subscription } = await serviceClient
+      .from("user_subscriptions")
+      .select("tier")
+      .eq("user_id", userId)
+      .maybeSingle();
+    const isPremium = subscription?.tier === "paid";
+
+    let userInsights: Record<string, unknown> | null = null;
+    if (isPremium) {
+      const { data: insights } = await serviceClient
+        .from("user_insights")
+        .select("*")
+        .eq("id", userId)
+        .maybeSingle();
+      userInsights = insights as Record<string, unknown> | null;
+    }
+
     // Build comprehensive user context from profile
     let userContext = "";
     if (profile) {
@@ -169,6 +187,41 @@ serve(async (req) => {
       
       if (parts.length > 0) {
         userContext = `\n\n====== USER PROFILE ======\n${parts.join("\n")}`;
+      }
+    }
+
+    // For premium users: inject full user_insights so the coach feels like it truly knows the user
+    if (isPremium && userInsights && Object.keys(userInsights).length > 0) {
+      const insightParts: string[] = [];
+      if (userInsights.avoided_foods?.length) {
+        insightParts.push(`Avoided foods: ${(userInsights.avoided_foods as string[]).join(", ")}`);
+      }
+      if (userInsights.favorite_cuisines?.length) {
+        insightParts.push(`Favorite cuisines: ${(userInsights.favorite_cuisines as string[]).join(", ")}`);
+      }
+      if (userInsights.workout_consistency_score != null) {
+        insightParts.push(`Workout consistency: ${Math.round((userInsights.workout_consistency_score as number) * 100)}%`);
+      }
+      if (userInsights.hydration_consistency != null) {
+        insightParts.push(`Hydration consistency: ${Math.round((userInsights.hydration_consistency as number) * 100)}%`);
+      }
+      if (userInsights.energy_pattern) {
+        insightParts.push(`Energy pattern: ${userInsights.energy_pattern} person`);
+      }
+      if (userInsights.most_skipped_meal_type) {
+        insightParts.push(`Often skips: ${userInsights.most_skipped_meal_type}`);
+      }
+      if (userInsights.most_completed_workout_type) {
+        insightParts.push(`Completes most: ${userInsights.most_completed_workout_type} workouts`);
+      }
+      if (userInsights.avg_calories_consumed && (userInsights.avg_calories_consumed as number) > 0) {
+        insightParts.push(`Avg calories consumed (from scans): ~${Math.round(userInsights.avg_calories_consumed as number)} kcal`);
+      }
+      if (userInsights.preferred_meal_times && Object.keys(userInsights.preferred_meal_times as object).length > 0) {
+        insightParts.push(`Preferred meal times: ${JSON.stringify(userInsights.preferred_meal_times)}`);
+      }
+      if (insightParts.length > 0) {
+        userContext += `\n\n====== LEARNED USER INSIGHTS (you know this user well) ======\n${insightParts.join("\n")}`;
       }
     }
 
@@ -286,6 +339,19 @@ Always prioritize user safety. For medical concerns, recommend consulting health
     
     // Log successful call
     await logAICall(serviceClient, userId, 'success');
+
+    // Fire-and-forget: extract profile updates and coach signals (non-blocking)
+    const lastUserMessage = messages.filter((m: { role: string }) => m.role === "user").pop()?.content;
+    if (lastUserMessage) {
+      fetch(`${SUPABASE_URL}/functions/v1/extract-profile-updates`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: authHeader,
+        },
+        body: JSON.stringify({ message: lastUserMessage }),
+      }).catch((e) => console.error("Fire-and-forget extract-profile-updates failed:", e));
+    }
 
     return new Response(response.body, {
       headers: { ...corsHeaders, "Content-Type": "text/event-stream" },

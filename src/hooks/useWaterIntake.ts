@@ -94,6 +94,10 @@ export function useWaterIntake(date: Date = new Date()) {
         liters: parseFloat((newGlasses * 0.25).toFixed(1)),
       }));
 
+      supabase.functions
+        .invoke("log-user-signal", { body: { signal_type: "water_logged", payload: { glasses: newGlasses } } })
+        .catch(() => {});
+
       if (newGlasses >= waterIntake.targetGlasses && waterIntake.glasses < waterIntake.targetGlasses) {
         toast.success("Daily water goal reached!");
       }

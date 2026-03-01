@@ -115,6 +115,18 @@ export function useTemplateWorkouts() {
 
         if (!response.ok) {
           const err = await response.json().catch(() => ({}));
+          if (response.status === 429) {
+            toast.error("Rate limit", {
+              description: err.error || err.message || "Wait a moment before trying again.",
+            });
+            return;
+          }
+          if (response.status === 402) {
+            toast.error("Limit reached", {
+              description: err.error || err.message || "Upgrade for more AI personalization.",
+            });
+            return;
+          }
           throw new Error(err.error || "Personalization failed");
         }
 
@@ -158,6 +170,7 @@ export function useTemplateWorkouts() {
 
   const completeWorkout = async (workoutId: string) => {
     try {
+      const workout = userWorkouts.find((w) => w.id === workoutId);
       const { error } = await supabase
         .from("user_workouts")
         .update({ is_completed: true, completed_at: new Date().toISOString() })
@@ -167,6 +180,19 @@ export function useTemplateWorkouts() {
       setUserWorkouts((prev) =>
         prev.map((w) => (w.id === workoutId ? { ...w, is_completed: true } : w))
       );
+
+      if (workout?.base_template_id) {
+        const workoutType = (workout.personalized_data as { workout_name?: string })?.workout_name || "unknown";
+        supabase.functions
+          .invoke("log-user-signal", {
+            body: {
+              signal_type: "workout_completed",
+              payload: { workout_template_id: workout.base_template_id, workout_type: workoutType },
+            },
+          })
+          .catch(() => {});
+      }
+
       toast.success("Workout completed!");
     } catch (error) {
       console.error("Error completing workout:", error);

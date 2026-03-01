@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { emitPlanRefresh } from "./usePlanRefresh";
 import { format } from "date-fns";
+import { useSubscription } from "./useSubscription";
 
 interface ProfileUpdateResult {
   hasUpdates: boolean;
@@ -26,6 +27,7 @@ async function getAccessToken(): Promise<string | null> {
 }
 
 export function useProfileUpdates() {
+  const { isPro } = useSubscription();
   const [isRegenerating, setIsRegenerating] = useState(false);
   const [regenerationType, setRegenerationType] = useState<'meal' | 'workout' | 'both' | null>(null);
 
@@ -144,6 +146,21 @@ export function useProfileUpdates() {
                 coachMessage: result.message || `I updated your ${planModification.targetMealType}.`,
               };
             } else {
+              // FULL REGENERATION: Free users cannot do on-demand full regeneration (except first plan)
+              if (!isPro) {
+                const { count } = await supabase
+                  .from("user_meals")
+                  .select("*", { count: "exact", head: true })
+                  .eq("user_id", userId);
+                if ((count ?? 0) > 0) {
+                  return {
+                    success: false,
+                    type: "meal",
+                    error: "Full plan regeneration is a Pro feature. Upgrade to regenerate your entire meal plan.",
+                    upgradeRequired: true,
+                  };
+                }
+              }
               // FULL REGENERATION: Use template-based generate-weekly-meal-plan
               console.log("Triggering full meal plan regeneration via template engine...");
               const response = await fetch(
@@ -208,9 +225,14 @@ export function useProfileUpdates() {
     const allSuccessful = results.every(r => r.success);
     const failedTypes = results.filter(r => !r.success).map(r => `${r.type}: ${r.error || 'Unknown error'}`);
     const coachMessage = results.find(r => r.coachMessage)?.coachMessage;
+    const upgradeRequired = results.some((r: { upgradeRequired?: boolean }) => r.upgradeRequired);
 
     setIsRegenerating(false);
     setRegenerationType(null);
+
+    if (upgradeRequired) {
+      return { success: false, error: "Full plan regeneration is a Pro feature. Upgrade to regenerate.", upgradeRequired: true };
+    }
 
     if (allSuccessful) {
       if (!coachMessage) {

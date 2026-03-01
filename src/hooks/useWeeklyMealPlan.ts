@@ -22,6 +22,7 @@ export function useWeeklyMealPlan() {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session?.access_token) throw new Error("No active session");
 
+        const idempotencyKey = crypto.randomUUID();
         const response = await fetch(
           `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-weekly-meal-plan`,
           {
@@ -30,18 +31,35 @@ export function useWeeklyMealPlan() {
               "Content-Type": "application/json",
               Authorization: `Bearer ${session.access_token}`,
             },
-            body: JSON.stringify({ start_date: startDate }),
+            body: JSON.stringify({
+              start_date: startDate,
+              idempotency_key: idempotencyKey,
+            }),
           }
         );
 
         if (!response.ok) {
           const err = await response.json().catch(() => ({}));
+          if (response.status === 429) {
+            toast.error("Rate limit", {
+              description: err.message || "Please wait a moment before generating again.",
+            });
+            return;
+          }
+          if (response.status === 402) {
+            toast.error("Limit reached", {
+              description: err.message || "Upgrade for more generations.",
+            });
+            return;
+          }
           throw new Error(err.error || "Failed to generate weekly meal plan");
         }
 
         const result = await response.json();
         toast.success(
-          `Weekly meal plan created! ${result.meals_created} meals across ${result.days_planned} days.`
+          result.from_cache
+            ? "Weekly meal plan loaded."
+            : `Weekly meal plan created! ${result.meals_created} meals across ${result.days_planned} days.`
         );
 
         // Refetch the plan
