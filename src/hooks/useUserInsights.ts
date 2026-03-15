@@ -34,11 +34,9 @@ export function useUserInsights() {
     setError(null);
 
     try {
-      const { data, error: fetchError } = await supabase
-        .from("user_insights")
-        .select("*")
-        .eq("id", user.id)
-        .maybeSingle();
+      // user_insights table doesn't exist yet — return null gracefully
+      const data = null;
+      const fetchError = null;
 
       if (fetchError) {
         throw fetchError;
