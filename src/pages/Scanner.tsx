@@ -128,7 +128,7 @@ export default function Scanner() {
         setMenuAnalysis(null);
         setCalorieAnalysis(null);
         setError(null);
-        setIsLogged(false);
+        setActionTaken("none");
       };
       reader.readAsDataURL(file);
     }
