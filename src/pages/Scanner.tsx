@@ -582,13 +582,11 @@ export default function Scanner() {
                               const cal =
                                 rec.estimatedCalories ??
                                 menuAnalysis.healthyChoices[0]?.estimatedCalories ??
-                                menuAnalysis.yourTargets?.calorieTarget / 4 ??
-                                500;
+                                (menuAnalysis.yourTargets?.calorieTarget ? menuAnalysis.yourTargets.calorieTarget / 4 : 500);
                               const pro =
                                 rec.estimatedProtein ??
                                 menuAnalysis.healthyChoices[0]?.estimatedProtein ??
-                                menuAnalysis.yourTargets?.proteinTarget / 4 ??
-                                30;
+                                (menuAnalysis.yourTargets?.proteinTarget ? menuAnalysis.yourTargets.proteinTarget / 4 : 30);
                               handleApplyToCurrentMeal(cal, pro, Math.round(cal * 0.3), Math.round(cal * 0.2), rec.name);
                             }}
                           >

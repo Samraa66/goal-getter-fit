@@ -231,7 +231,7 @@ export function useProfileUpdates() {
     setRegenerationType(null);
 
     if (upgradeRequired) {
-      return { success: false, error: "Full plan regeneration is a Pro feature. Upgrade to regenerate.", upgradeRequired: true };
+      return { success: false, error: "Full plan regeneration is a Pro feature. Upgrade to regenerate." };
     }
 
     if (allSuccessful) {
