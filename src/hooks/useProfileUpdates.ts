@@ -225,7 +225,7 @@ export function useProfileUpdates() {
     const allSuccessful = results.every(r => r.success);
     const failedTypes = results.filter(r => !r.success).map(r => `${r.type}: ${r.error || 'Unknown error'}`);
     const coachMessage = results.find(r => r.coachMessage)?.coachMessage;
-    const upgradeRequired = results.some((r: { upgradeRequired?: boolean }) => r.upgradeRequired);
+    const upgradeRequired = results.some((r: any) => r.upgradeRequired);
 
     setIsRegenerating(false);
     setRegenerationType(null);
